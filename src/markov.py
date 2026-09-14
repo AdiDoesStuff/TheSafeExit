@@ -88,6 +88,110 @@ def build_QR(grid: np.ndarray, state_map: Dict[Tuple[int, int], int], n_transien
     return Q.tocsr(), R.tocsr()
 
 
+# Alias for clarity: existing build_QR generates the uniform random walk
+build_uniform_QR = build_QR
+
+
+def build_rational_QR(
+    grid: np.ndarray,
+    distance_field: np.ndarray,
+    state_map: Dict[Tuple[int, int], int],
+    n_transient: int,
+    n_absorbing: int,
+) -> Tuple[sp.csr_matrix, sp.csr_matrix]:
+    """
+    Constructs steepest-descent transition matrices Q (transient->transient)
+    and R (transient->absorbing) based on the geodesic exit distance field.
+
+    From each transient cell i at (r, c), agents move uniformly only among
+    passable neighbor cells with distance exactly equal to (distance(r, c) - 1).
+    Ties are split equally.
+
+    Returns:
+        Q: scipy.sparse.csr_matrix of shape (n_transient, n_transient)
+        R: scipy.sparse.csr_matrix of shape (n_transient, n_absorbing)
+    """
+    rows, cols = grid.shape
+    Q = sp.lil_matrix((n_transient, n_transient), dtype=np.float64)
+    R = sp.lil_matrix((n_transient, n_absorbing), dtype=np.float64)
+
+    directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+
+    for (r, c), i in state_map.items():
+        if i >= n_transient:
+            continue  # Skip absorbing exit cells
+
+        d_curr = distance_field[r, c]
+        descent_neighbors = []
+
+        for dr, dc in directions:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols:
+                if grid[nr, nc] != CELL_WALL and distance_field[nr, nc] == d_curr - 1:
+                    descent_neighbors.append((nr, nc))
+
+        if not descent_neighbors:
+            raise ValueError(
+                f"No descent neighbor found for cell {(r, c)} with distance {d_curr}. "
+                "Ensure floor plan reachability validation passed."
+            )
+
+        p_step = 1.0 / len(descent_neighbors)
+
+        for nr, nc in descent_neighbors:
+            cell_val = grid[nr, nc]
+            if cell_val == CELL_WALKABLE:
+                j = state_map[(nr, nc)]
+                Q[i, j] += p_step
+            elif cell_val == CELL_EXIT:
+                exit_idx = state_map[(nr, nc)] - n_transient
+                R[i, exit_idx] += p_step
+
+    return Q.tocsr(), R.tocsr()
+
+
+def build_mixed_QR(
+    Q_rational: sp.csr_matrix,
+    R_rational: sp.csr_matrix,
+    Q_uniform: sp.csr_matrix,
+    R_uniform: sp.csr_matrix,
+    lam: np.ndarray,
+) -> Tuple[sp.csr_matrix, sp.csr_matrix]:
+    """
+    Performs row-wise convex combination of rational and uniform transition matrices:
+
+        Q_t[i, :] = (1 - lam[i]) * Q_rational[i, :] + lam[i] * Q_uniform[i, :]
+        R_t[i, :] = (1 - lam[i]) * R_rational[i, :] + lam[i] * R_uniform[i, :]
+
+    Parameters:
+        Q_rational, R_rational: Steepest-descent transition matrices.
+        Q_uniform, R_uniform: Unbiased random-walk transition matrices.
+        lam: Array of shape (n_transient,) or scalar, with values in [0.0, 1.0].
+
+    Returns:
+        Q_t, R_t: Mutated sparse transition matrices satisfying row stochasticity.
+    """
+    n_transient = Q_rational.shape[0]
+    lam_arr = np.asarray(lam, dtype=np.float64)
+
+    if lam_arr.ndim == 0:
+        lam_arr = np.full(n_transient, float(lam_arr), dtype=np.float64)
+    elif lam_arr.shape != (n_transient,):
+        raise ValueError(
+            f"lam array shape {lam_arr.shape} does not match n_transient={n_transient}"
+        )
+
+    lam_arr = np.clip(lam_arr, 0.0, 1.0)
+
+    one_minus_lam = sp.diags(1.0 - lam_arr, offsets=0, shape=(n_transient, n_transient), format="csr")
+    lam_diag = sp.diags(lam_arr, offsets=0, shape=(n_transient, n_transient), format="csr")
+
+    Q_t = (one_minus_lam @ Q_rational + lam_diag @ Q_uniform).tocsr()
+    R_t = (one_minus_lam @ R_rational + lam_diag @ R_uniform).tocsr()
+
+    return Q_t, R_t
+
+
 def get_markov_stats(Q: sp.csr_matrix, R: sp.csr_matrix, n_transient: int, n_absorbing: int) -> dict:
     """
     Returns summary statistics for the constructed Markov chain.
@@ -105,3 +209,4 @@ def get_markov_stats(Q: sp.csr_matrix, R: sp.csr_matrix, n_transient: int, n_abs
         "nnz_R": nnz_R,
         "density_Q": density_Q,
     }
+

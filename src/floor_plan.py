@@ -134,3 +134,41 @@ def plot_floor_plan(grid: np.ndarray, title: str = "Floor Plan Layout", ax=None,
         fig.savefig(save_path, dpi=300, bbox_inches='tight')
 
     return fig, ax
+
+
+def compute_exit_distance_field(grid: np.ndarray) -> np.ndarray:
+    """
+    Computes geodesic (grid-step) shortest distance from every walkable cell
+    to the nearest exit cell using multi-source BFS.
+
+    Returns:
+        dist: 2D np.ndarray of shape grid.shape with integer distances.
+              Exit cells have distance 0.
+              Walkable cells have shortest path distance >= 1 to an exit.
+              Wall cells have distance -1.
+    """
+    rows, cols = grid.shape
+    dist = np.full((rows, cols), -1, dtype=int)
+
+    exits = list(zip(*np.where(grid == CELL_EXIT)))
+    if not exits:
+        raise ValueError("Floor plan has no exit cells (CELL_EXIT = 2).")
+
+    queue = deque()
+    for r, c in exits:
+        dist[r, c] = 0
+        queue.append((r, c))
+
+    directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+
+    while queue:
+        r, c = queue.popleft()
+        for dr, dc in directions:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols:
+                if grid[nr, nc] != CELL_WALL and dist[nr, nc] == -1:
+                    dist[nr, nc] = dist[r, c] + 1
+                    queue.append((nr, nc))
+
+    return dist
+

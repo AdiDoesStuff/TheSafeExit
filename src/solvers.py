@@ -53,6 +53,12 @@ def solve_fundamental_svd(Q: sp.csr_matrix) -> np.ndarray:
     return N
 
 
+# Aliases for convenience and standardized naming
+fundamental_matrix_lu = solve_fundamental_lu
+fundamental_matrix_svd = solve_fundamental_svd
+
+
+
 def benchmark_solvers(sizes: list = [10, 20, 30, 50, 100], max_svd_size: int = 50) -> Dict[str, Any]:
     """
     Benchmarks solve time (in seconds) for LU vs SVD solvers across grid sizes.
