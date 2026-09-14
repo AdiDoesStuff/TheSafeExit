@@ -24,3 +24,6 @@ Thumbs.db
 
 # Jupyter notebooks checkpoints
 .ipynb_checkpoints/
+
+# Project documentation (local only)
+PROJECT_EXPLANATION.md
