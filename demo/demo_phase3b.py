@@ -11,6 +11,7 @@ pattern holds across all three, it's a model property. If it doesn't, that's
 equally worth knowing before this goes in the report as a general claim.
 """
 
+from typing import Optional
 import os
 import sys
 from pathlib import Path
