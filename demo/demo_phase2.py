@@ -162,8 +162,8 @@ sim = EvacuationSimulation(
 
 results = sim.run(
     max_steps=600,
-    record_heatmap=True,
-    heatmap_interval=HEATMAP_INTERVAL,
+    snapshot_every=HEATMAP_INTERVAL,
+    max_snapshots=30,
 )
 
 history    = results["history"]
@@ -271,15 +271,10 @@ print("=" * 70)
 
 snapshots = results["snapshots"]
 if snapshots:
-    mid_t = sorted(snapshots.keys())[len(snapshots) // 2]
-    N_t = snapshots[mid_t]
-
-    # Map each transient state row sum (expected visits before absorption) to 2D grid
-    row_sums = N_t.sum(axis=1)
-    bottleneck_map = np.full(grid.shape, np.nan)
-    for state_idx in range(n_trans):
-        r, c = idx_map[state_idx]
-        bottleneck_map[r, c] = row_sums[state_idx]
+    mid_idx = len(snapshots) // 2
+    snap = snapshots[mid_idx]
+    mid_t = snap["t"]
+    bottleneck_map = snap["heatmap_2d"]
 
     masked_btl = np.ma.masked_invalid(bottleneck_map)
 
@@ -293,11 +288,13 @@ if snapshots:
         f"N_t Bottleneck Heatmap at t={mid_t}\n(High = Cells Agents Spend Most Time In)",
         fontsize=11, fontweight="bold"
     )
-    print(f"  N_t snapshot at t={mid_t}, max row-sum = {row_sums.max():.1f}")
+    valid_vals = bottleneck_map[~np.isnan(bottleneck_map)]
+    max_val = valid_vals.max() if len(valid_vals) > 0 else 0.0
+    print(f"  N_t snapshot at t={mid_t}, max expected steps = {max_val:.1f}")
     plt.tight_layout()
     save(fig, "phase2_05_heatmap_snapshot.png")
 else:
-    print("  (No N_t snapshots recorded — increase max_steps or lower heatmap_interval)")
+    print("  (No N_t snapshots recorded — increase max_steps or lower snapshot_every)")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

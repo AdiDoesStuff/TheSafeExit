@@ -13,14 +13,15 @@ def test_simulation_initialization_and_step():
     assert len(sim.agent_states) == n_agents
     assert np.all(sim.agent_states >= 0)  # all initially active in transient states
 
-    # Perform a single step
-    step_info = sim.step(record_heatmap=True)
+    # Perform a single step with snapshot
+    step_info = sim.step(record_snapshot=True)
 
     assert step_info["step"] == 1
     assert step_info["active_agents"] + step_info["evacuated_agents"] == n_agents
     assert step_info["mean_panic"] >= 0.0
-    assert step_info["N_t"] is not None
-    assert step_info["N_t"].shape == (sim.n_transient, sim.n_transient)
+    assert step_info["snapshot"] is not None
+    assert step_info["snapshot"]["heatmap_2d"].shape == grid.shape
+    assert len(step_info["snapshot"]["top3_cells"]) <= 3
 
 
 def test_simulation_run_full_evacuation():
@@ -28,13 +29,15 @@ def test_simulation_run_full_evacuation():
     n_agents = 15
     sim = EvacuationSimulation(grid, n_agents=n_agents, D=0.2, k=0.5, beta=0.4, seed=123)
 
-    results = sim.run(max_steps=200, record_heatmap=True, heatmap_interval=5)
+    results = sim.run(max_steps=200, snapshot_every=5, max_snapshots=10)
 
     assert results["evacuated_agents"] == n_agents
     assert results["evacuation_rate"] == 1.0
     assert results["mean_evacuation_time"] > 0
     assert len(results["history"]) == results["total_steps"]
     assert len(results["snapshots"]) > 0
+    assert isinstance(results["snapshots"], list)
+
 
 
 def test_custom_initial_positions():

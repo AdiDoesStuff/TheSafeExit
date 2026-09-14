@@ -25,6 +25,7 @@ from src.floor_plan import CELL_WALL, CELL_WALKABLE, CELL_EXIT, compute_exit_dis
 from src.markov import build_state_map, build_uniform_QR, build_rational_QR, build_mixed_QR
 from src.panic import PanicField, compute_agent_density
 from src.solvers import fundamental_matrix_lu
+from src.heatmap import fundamental_to_heatmap
 
 
 class EvacuationSimulation:
@@ -116,15 +117,15 @@ class EvacuationSimulation:
         coords = [self.index_to_state[s] for s in active_states]
         return np.array(coords, dtype=int)
 
-    def step(self, record_heatmap: bool = False) -> Dict[str, Any]:
+    def step(self, record_snapshot: bool = False) -> Dict[str, Any]:
         """
         Advances the coupled simulation by one discrete timestep.
 
         Parameters:
-            record_heatmap: If True, computes the snapshot fundamental matrix N_t = (I - Q_t)^(-1).
+            record_snapshot: If True, computes the reduced 2D bottleneck heatmap snapshot.
 
         Returns:
-            step_summary: Dictionary containing step metrics and optional N_t snapshot.
+            step_summary: Dictionary containing step metrics and optional snapshot record.
         """
         active_indices = np.where(self.agent_states >= 0)[0]
         n_active = len(active_indices)
@@ -137,7 +138,7 @@ class EvacuationSimulation:
                 "mean_panic": 0.0,
                 "max_panic": 0.0,
                 "mean_lambda": 0.0,
-                "N_t": None,
+                "snapshot": None,
             }
 
         # 1. Calculate agent crowd density
@@ -156,10 +157,35 @@ class EvacuationSimulation:
             self.Q_rational, self.R_rational, self.Q_uniform, self.R_uniform, lam_t
         )
 
-        # 5. Optional Fundamental Matrix N_t Snapshot (Engine D)
-        N_t = None
-        if record_heatmap:
+        # 5. Snapshot Bottleneck Heatmap (Engine D: solve N_t and immediately reduce to 2D)
+        snapshot = None
+        if record_snapshot:
             N_t = fundamental_matrix_lu(Q_t)
+            heatmap_2d = fundamental_to_heatmap(
+                N_t, self.floor_plan, self.state_map, self.n_transient
+            )
+
+            # Identify top-3 bottleneck cells (walkable cells with highest expected steps)
+            valid_coords = np.argwhere(
+                (~np.isnan(heatmap_2d)) & (self.floor_plan == CELL_WALKABLE)
+            )
+            top3_cells: List[Tuple[int, int, float]] = []
+            if len(valid_coords) > 0:
+                values = heatmap_2d[valid_coords[:, 0], valid_coords[:, 1]]
+                top_k_indices = np.argsort(values)[::-1][:3]
+                for k_idx in top_k_indices:
+                    r = int(valid_coords[k_idx, 0])
+                    c = int(valid_coords[k_idx, 1])
+                    top3_cells.append((r, c, float(values[k_idx])))
+
+            snapshot = {
+                "t": self.time_step + 1,
+                "heatmap_2d": heatmap_2d,
+                "top3_cells": top3_cells,
+                "mean_panic": float(np.mean(panic_vec)),
+                "active_agents": int(n_active),
+            }
+            # Note: raw N_t matrix is immediately released / garbage collected
 
         # 6. Discretely sample each active agent's next cell
         for agent_idx in active_indices:
@@ -212,45 +238,54 @@ class EvacuationSimulation:
             "mean_panic": float(np.mean(panic_vec)),
             "max_panic": float(np.max(panic_vec)),
             "mean_lambda": float(np.mean(lam_t)),
-            "N_t": N_t,
+            "snapshot": snapshot,
         }
 
     def run(
         self,
-        max_steps: int = 500,
-        record_heatmap: bool = False,
-        heatmap_interval: Optional[int] = None,
+        max_steps: int = 600,
+        snapshot_every: int = 20,
+        max_snapshots: int = 30,
     ) -> Dict[str, Any]:
         """
         Runs the simulation loop until all agents evacuate or max_steps is reached.
 
         Parameters:
             max_steps: Maximum number of discrete simulation timesteps.
-            record_heatmap: Whether to capture N_t snapshots.
-            heatmap_interval: Interval in timesteps to record N_t snapshots.
+            snapshot_every: Interval in timesteps to record reduced bottleneck snapshots.
+            max_snapshots: Hard ceiling on the total number of snapshots stored.
 
         Returns:
-            trajectory: Dictionary with history log, evacuation statistics, and snapshots.
+            trajectory: Dictionary with history log, evacuation statistics, and snapshot list.
         """
         history = []
-        snapshots = {}
+        snapshots: List[Dict[str, Any]] = []
+        agent_position_history: List[List[List[int]]] = []
 
-        for t in range(max_steps):
+        for _ in range(max_steps):
             if np.all(self.agent_states == -1):
                 break
 
-            should_record_n = False
-            if record_heatmap:
-                if heatmap_interval is None or (t % heatmap_interval == 0):
-                    should_record_n = True
+            should_snapshot = (
+                snapshot_every > 0
+                and ((self.time_step + 1) % snapshot_every == 0)
+                and (len(snapshots) < max_snapshots)
+            )
 
-            summary = self.step(record_heatmap=should_record_n)
-            if should_record_n and summary["N_t"] is not None:
-                snapshots[summary["step"]] = summary["N_t"]
+            summary = self.step(record_snapshot=should_snapshot)
+            if should_snapshot and summary["snapshot"] is not None:
+                snapshots.append(summary["snapshot"])
 
-            # Exclude large N_t matrix from per-step scalar history log
-            step_record = {k: v for k, v in summary.items() if k != "N_t"}
+            # Exclude snapshot dict from per-step scalar history log
+            step_record = {k: v for k, v in summary.items() if k != "snapshot"}
             history.append(step_record)
+
+            # Record per-agent positions
+            curr_positions = [
+                list(self.index_to_state[s]) if s >= 0 else [-1, -1]
+                for s in self.agent_states
+            ]
+            agent_position_history.append(curr_positions)
 
         evacuated_count = len(self.evacuation_times)
         evac_times = list(self.evacuation_times.values())
@@ -264,4 +299,5 @@ class EvacuationSimulation:
             "mean_evacuation_time": mean_evac_time,
             "history": history,
             "snapshots": snapshots,
+            "agent_position_history": agent_position_history,
         }

@@ -143,6 +143,3 @@ These snapshots are useful for instantaneous bottleneck analysis.
 ## Current Scope
 
 The main integrated simulation supports panic-driven Markov movement and evacuation tracking. The Gaussian behavioral sampler is implemented and demonstrated separately, but individual sampled traits are not yet wired into the main simulation loop.
-
-See `PROJECT_EXPLANATION.md` for a thorough viva-preparation explanation of every module, the data flow, important invariants, limitations, and math concepts used.
-

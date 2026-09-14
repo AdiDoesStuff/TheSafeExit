@@ -36,6 +36,60 @@ def get_simple_room(rows: int = 20, cols: int = 20, exit_width: int = 2) -> np.n
     return grid
 
 
+def get_two_exit_room(rows: int = 20, cols: int = 20, exit_width: int = 2) -> np.ndarray:
+    """
+    Creates a rectangular room layout with two exits on opposite walls (left and right).
+    """
+    if rows < 5 or cols < 5:
+        raise ValueError("Room dimensions must be at least 5x5.")
+
+    grid = np.full((rows, cols), CELL_WALKABLE, dtype=int)
+
+    # Outer boundary walls
+    grid[0, :] = CELL_WALL
+    grid[-1, :] = CELL_WALL
+    grid[:, 0] = CELL_WALL
+    grid[:, -1] = CELL_WALL
+
+    # Exit placement (middle of left wall and middle of right wall)
+    mid = rows // 2
+    half_w = max(1, exit_width // 2)
+    start_r = max(1, mid - half_w)
+    end_r = min(rows - 1, start_r + exit_width)
+
+    grid[start_r:end_r, 0] = CELL_EXIT   # Left exit
+    grid[start_r:end_r, -1] = CELL_EXIT  # Right exit
+
+    return grid
+
+
+def get_room_with_pillar(
+    rows: int = 20, cols: int = 20, exit_width: int = 2, pillar_size: int = 4
+) -> np.ndarray:
+    """
+    Creates a rectangular room with an exit on the right wall and a solid square pillar (wall obstruction) in the center.
+    """
+    if rows < 7 or cols < 7:
+        raise ValueError("Room dimensions must be at least 7x7 for a central pillar.")
+    if pillar_size >= min(rows - 2, cols - 2):
+        raise ValueError("Pillar size is too large for the room dimensions.")
+
+    grid = get_simple_room(rows, cols, exit_width=exit_width)
+
+    # Central pillar placement
+    mid_r = rows // 2
+    mid_c = cols // 2
+    half_p = pillar_size // 2
+    r_start = mid_r - half_p
+    r_end = r_start + pillar_size
+    c_start = mid_c - half_p
+    c_end = c_start + pillar_size
+
+    grid[r_start:r_end, c_start:c_end] = CELL_WALL
+
+    return grid
+
+
 def get_hallway(rows: int = 25, cols: int = 25, corridor_width: int = 3, exit_width: int = 1) -> np.ndarray:
     """
     Creates an L-shaped hallway corridor with a chokepoint bottleneck before a single exit.
