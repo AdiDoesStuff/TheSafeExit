@@ -1,59 +1,62 @@
 # TheSafeExit
 
-TheSafeExit is a stochastic crowd evacuation simulation project. It represents a building as a grid, moves agents through the grid using absorbing Markov chains, models panic as a diffusion field, and visualizes evacuation bottlenecks with fundamental matrix heatmaps.
+TheSafeExit is a stochastic crowd evacuation simulation project. It models a building as a grid, moves agents using absorbing Markov chains, spreads panic with a wall-aware diffusion model, and visualizes evacuation bottlenecks over time.
 
-The project was built for a mathematics-focused intelligent systems setting, so the main emphasis is not just animation. The emphasis is the mathematical pipeline behind evacuation behavior: probability, Markov chains, linear algebra, PDE-based diffusion, numerical stability, and sparse solvers.
+The project is designed around the mathematics of evacuation rather than only animation. It combines graph search, probability, Markov chains, sparse linear algebra, numerical PDEs, stochastic simulation, and visualization.
 
 ## Project Idea
 
-In an emergency, people do not simply move in straight lines. They choose paths, crowd near bottlenecks, influence each other, and may become less rational as panic increases.
-
-TheSafeExit models that idea using a grid-based floor plan:
-
-- Walls are blocked cells.
-- Walkable areas are transient states.
-- Exits are absorbing states.
-- Agents move probabilistically from cell to cell.
-- Crowd density generates panic.
-- Panic diffuses through passable space.
-- Higher panic shifts movement from rational shortest-path behavior toward random movement.
-
-This creates a feedback loop:
+The main feedback loop is:
 
 ```text
-agent positions -> crowd density -> panic field -> transition probabilities -> new agent positions
+agent positions -> crowd density -> panic field -> movement probabilities -> new agent positions
 ```
 
-The result is a simulation that can report evacuation statistics and produce heatmaps showing where bottlenecks are likely to form.
+Agents normally move according to rational shortest-path probabilities. As panic increases, their movement becomes more random. Exits are absorbing states, so once an agent reaches an exit, it is removed from the active simulation.
 
-## Main Features
+The project produces:
 
-- Grid-based floor plan representation.
-- Simple room and L-shaped hallway generators.
+- evacuation statistics,
+- static bottleneck heatmaps,
+- time-evolving bottleneck heatmap grids,
+- GIF animations of bottleneck evolution,
+- bottleneck migration plots,
+- geometry comparison demos.
+
+## Current Features
+
+- Grid-based floor plans with walls, walkable cells, and exits.
+- Simple room, two-exit room, pillar room, and L-shaped hallway layouts.
 - BFS reachability validation.
-- Geodesic distance field computation from every cell to the nearest exit.
-- Absorbing Markov chain construction with `Q` and `R` matrices.
+- BFS exit-distance fields for rational movement.
+- Absorbing Markov chain construction using `Q` and `R`.
 - Uniform random-walk movement model.
 - Rational shortest-path movement model.
 - Panic-based convex mixing between rational and random movement.
-- Panic diffusion using a wall-aware explicit numerical scheme.
-- Sparse LU solver for the fundamental matrix.
-- Dense SVD solver for validation and benchmarking.
-- Fundamental matrix bottleneck heatmaps.
-- Multivariate Gaussian agent trait sampler and visualization.
-- Pytest suite covering floor plans, Markov matrices, solvers, panic, and simulation.
+- Wall-aware panic diffusion PDE with CFL stability checking.
+- Sparse LU and dense SVD fundamental matrix solvers.
+- Static fundamental matrix heatmaps.
+- Reduced time-evolving heatmap snapshots.
+- Multi-panel heatmap sequence plots.
+- Synchronized heatmap GIF animation.
+- Primary bottleneck migration tracking.
+- Per-agent position history for analysis.
+- Phase 3b geometry generalization study.
+- Standalone multivariate Gaussian agent trait sampler.
+- Pytest coverage for floor plans, Markov matrices, panic, solvers, simulation, and heatmap sequences.
 
 ## Repository Structure
 
 ```text
 src/
-  floor_plan.py        Floor plan creation, validation, plotting, distance fields
-  markov.py            State mapping and transition matrix construction
-  solvers.py           Fundamental matrix solvers using LU and SVD
-  heatmap.py           Bottleneck heatmap generation
-  gaussian_sampler.py  Behavioral trait sampling
-  panic.py             Panic diffusion PDE
-  simulation.py        Full coupled evacuation simulation
+  floor_plan.py         Floor-plan generation, validation, plotting, distance fields
+  markov.py             State maps and Markov transition matrices
+  solvers.py            Fundamental matrix solvers using LU and SVD
+  heatmap.py            Static bottleneck heatmaps
+  heatmap_sequence.py   Time-evolving heatmap grids, GIFs, migration tracking
+  gaussian_sampler.py   Multivariate Gaussian behavior sampling
+  panic.py              Panic diffusion PDE
+  simulation.py         Coupled evacuation simulation
 
 tests/
   test_floor_plan.py
@@ -61,10 +64,13 @@ tests/
   test_solvers.py
   test_panic.py
   test_simulation.py
+  test_heatmap_sequence.py
 
 demo/
   mid_sem_demo.py
   demo_phase2.py
+  demo_phase3.py
+  demo_phase3b.py
   figures/
 ```
 
@@ -87,20 +93,25 @@ Dependencies:
 pytest
 ```
 
-The tests verify core mathematical and implementation invariants, including reachability, row-stochastic transition matrices, panic stability, wall isolation, and LU/SVD agreement.
+On Windows using the included virtual environment:
+
+```bash
+.\.venv\Scripts\python.exe -m pytest
+```
+
+For headless plotting/test runs, use Matplotlib's non-GUI backend:
+
+```bash
+$env:MPLBACKEND='Agg'; .\.venv\Scripts\python.exe -m pytest
+```
 
 ## Running Demos
 
-Mid-semester demo:
-
 ```bash
 python demo/mid_sem_demo.py
-```
-
-Phase 2 coupled simulation demo:
-
-```bash
 python demo/demo_phase2.py
+python demo/demo_phase3.py
+python demo/demo_phase3b.py
 ```
 
 Generated figures are saved in:
@@ -109,7 +120,7 @@ Generated figures are saved in:
 demo/figures/
 ```
 
-## Core Mathematical Model
+## Core Model
 
 The floor plan is converted into an absorbing Markov chain:
 
@@ -120,26 +131,45 @@ P = [ Q  R ]
 
 Where:
 
-- `Q` represents transitions between walkable cells.
-- `R` represents transitions from walkable cells to exits.
-- Exit cells are absorbing.
+- `Q` stores transitions between walkable cells.
+- `R` stores transitions from walkable cells to exits.
+- exits are absorbing states.
 
-For a fixed transition matrix, the fundamental matrix is:
+For a fixed transition matrix:
 
 ```text
 N = (I - Q)^(-1)
 ```
 
-The row sums of `N` estimate expected time to absorption from each starting cell. The project maps those values back to the grid to produce bottleneck heatmaps.
+The row sums of `N` give expected evacuation steps from each starting cell. These values are mapped back onto the floor plan to form bottleneck heatmaps.
 
-In the coupled simulation, panic changes over time, so the transition matrix becomes `Q_t`. The simulation can compute frozen-time snapshots:
+In the panic-coupled simulation, panic changes the movement matrix over time:
 
 ```text
-N_t = (I - Q_t)^(-1)
+Q_t = (1 - lambda_t) Q_rational + lambda_t Q_uniform
 ```
 
-These snapshots are useful for instantaneous bottleneck analysis.
+where:
 
-## Current Scope
+```text
+lambda_t = clip(beta * panic, 0, 1)
+```
 
-The main integrated simulation supports panic-driven Markov movement and evacuation tracking. The Gaussian behavioral sampler is implemented and demonstrated separately, but individual sampled traits are not yet wired into the main simulation loop.
+So `N_t = (I - Q_t)^(-1)` is treated as a frozen-time bottleneck snapshot.
+
+## Phase 3 Additions
+
+The current simulation stores reduced heatmap snapshots instead of raw `N_t` matrices. Each snapshot stores:
+
+- timestep,
+- 2D heatmap,
+- top three bottleneck cells,
+- mean panic,
+- active-agent count.
+
+`heatmap_sequence.py` can then:
+
+- apply a global color scale across all frames,
+- plot a static sequence grid,
+- generate a GIF animation,
+- track primary bottleneck migration over time.
