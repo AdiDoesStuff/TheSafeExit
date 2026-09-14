@@ -1,0 +1,26 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Distribution / packaging
+build/
+*.egg-info/
+
+# Test artifacts
+.pytest_cache/
+
+# IDE / editor folders
+.idea/
+.vscode/
+
+# OS generated files
+Thumbs.db
+.DS_Store
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
