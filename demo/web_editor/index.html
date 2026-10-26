@@ -1,0 +1,2117 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>TheSafeExit — Floor Plan Editor</title>
+  <meta name="description"
+    content="Interactive floor plan editor for stochastic crowd evacuation analysis. Draw custom maps, run Markov chain analysis, Monte Carlo validation, and exit optimization.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
+
+  <style>
+    /* ─── Design tokens ─────────────────────────────────────────────────────── */
+    :root {
+      --bg: #0d0f17;
+      --surface: #131620;
+      --surface2: #1a1e2e;
+      --surface3: #232840;
+      --border: rgba(255, 255, 255, .08);
+      --border2: rgba(255, 255, 255, .14);
+      --text: #e8eaf6;
+      --text-dim: #8892b0;
+      --text-dimmer: #4a5270;
+
+      /* accent palette */
+      --teal: #2ec4b6;
+      --teal-dim: rgba(46, 196, 182, .15);
+      --teal-glow: rgba(46, 196, 182, .35);
+      --violet: #7c6ff7;
+      --violet-dim: rgba(124, 111, 247, .15);
+      --coral: #ff6b6b;
+      --coral-dim: rgba(255, 107, 107, .15);
+      --amber: #ffa94d;
+      --amber-dim: rgba(255, 169, 77, .15);
+
+      /* cell colours */
+      --cell-wall: #1a1e2e;
+      --cell-walkable: #f0f2ff;
+      --cell-exit: #2ec4b6;
+
+      --radius-sm: 6px;
+      --radius: 10px;
+      --radius-lg: 16px;
+      --shadow: 0 4px 24px rgba(0, 0, 0, .4);
+      --transition: .18s cubic-bezier(.4, 0, .2, 1);
+    }
+
+    /* ─── Reset & base ──────────────────────────────────────────────────────── */
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      height: 100%;
+    }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ─── Layout shell ──────────────────────────────────────────────────────── */
+    .shell {
+      display: grid;
+      grid-template-columns: 300px 1fr 320px;
+      grid-template-rows: 56px 1fr;
+      height: 100vh;
+      gap: 0;
+    }
+
+    /* ─── Top bar ───────────────────────────────────────────────────────────── */
+    .topbar {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 0 20px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      z-index: 10;
+      flex-shrink: 0;
+    }
+
+    .topbar-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -.3px;
+    }
+
+    .topbar-logo .logo-icon {
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(135deg, var(--teal), var(--violet));
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+    }
+
+    .topbar-sep {
+      width: 1px;
+      height: 24px;
+      background: var(--border);
+      margin: 0 4px;
+    }
+
+    .topbar-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-dim);
+      flex: 1;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--text-dimmer);
+      transition: background var(--transition), box-shadow var(--transition);
+    }
+
+    .status-dot.online {
+      background: var(--teal);
+      box-shadow: 0 0 6px var(--teal-glow);
+    }
+
+    .status-dot.running {
+      background: var(--amber);
+      box-shadow: 0 0 6px rgba(255, 169, 77, .5);
+      animation: pulse-dot 1s ease-in-out infinite;
+    }
+
+    .status-dot.error {
+      background: var(--coral);
+    }
+
+    @keyframes pulse-dot {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: .4;
+      }
+    }
+
+    .topbar-controls {
+      display: flex;
+      gap: 8px;
+      margin-left: auto;
+    }
+
+    /* ─── Buttons ───────────────────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 12.5px;
+      font-weight: 500;
+      font-family: inherit;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all var(--transition);
+      white-space: nowrap;
+      text-decoration: none;
+    }
+
+    .btn:disabled {
+      opacity: .4;
+      cursor: not-allowed;
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-dim);
+      border-color: var(--border);
+    }
+
+    .btn-ghost:not(:disabled):hover {
+      background: var(--surface2);
+      color: var(--text);
+      border-color: var(--border2);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--teal), hsl(176, 62%, 36%));
+      color: #001918;
+      border-color: transparent;
+      font-weight: 600;
+    }
+
+    .btn-primary:not(:disabled):hover {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 16px var(--teal-glow);
+    }
+
+    .btn-primary:not(:disabled):active {
+      transform: translateY(0);
+    }
+
+    .btn-violet {
+      background: linear-gradient(135deg, var(--violet), hsl(243, 70%, 52%));
+      color: #fff;
+      border-color: transparent;
+      font-weight: 600;
+    }
+
+    .btn-violet:not(:disabled):hover {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 16px rgba(124, 111, 247, .4);
+    }
+
+    .btn-sm {
+      padding: 4px 10px;
+      font-size: 11.5px;
+    }
+
+    .btn-xs {
+      padding: 2px 8px;
+      font-size: 11px;
+    }
+
+    /* ─── Left panel (tools) ────────────────────────────────────────────────── */
+    .panel-left {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .panel-section {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .panel-section:last-child {
+      border-bottom: none;
+    }
+
+    .section-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--text-dimmer);
+      margin-bottom: 12px;
+    }
+
+    /* Tool palette */
+    .tool-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .tool-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+      padding: 10px 6px;
+      border-radius: var(--radius-sm);
+      background: var(--surface2);
+      border: 1.5px solid transparent;
+      cursor: pointer;
+      transition: all var(--transition);
+      color: var(--text-dim);
+      font-size: 11px;
+      font-weight: 500;
+      font-family: inherit;
+    }
+
+    .tool-btn:hover {
+      background: var(--surface3);
+      color: var(--text);
+    }
+
+    .tool-btn.active {
+      border-color: var(--teal);
+      background: var(--teal-dim);
+      color: var(--teal);
+      box-shadow: 0 0 0 1px var(--teal-dim);
+    }
+
+    .tool-btn .tool-icon {
+      font-size: 18px;
+    }
+
+    /* Cell colour swatches */
+    .swatch-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .swatch {
+      width: 22px;
+      height: 22px;
+      border-radius: 4px;
+      border: 2px solid transparent;
+      cursor: pointer;
+      transition: transform var(--transition), border-color var(--transition);
+    }
+
+    .swatch:hover {
+      transform: scale(1.15);
+    }
+
+    .swatch.active {
+      border-color: white;
+    }
+
+    .swatch-wall {
+      background: var(--cell-wall);
+      border-color: var(--border2);
+    }
+
+    .swatch-walkable {
+      background: var(--cell-walkable);
+    }
+
+    .swatch-exit {
+      background: var(--cell-exit);
+    }
+
+    .swatch-label {
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    /* Grid size controls */
+    .size-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .size-row input[type=number] {
+      width: 60px;
+      padding: 5px 8px;
+      border-radius: var(--radius-sm);
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      outline: none;
+      transition: border-color var(--transition);
+    }
+
+    .size-row input:focus {
+      border-color: var(--teal);
+    }
+
+    .size-label {
+      font-size: 11px;
+      color: var(--text-dim);
+      flex: 1;
+    }
+
+    /* Select */
+    select.styled {
+      width: 100%;
+      padding: 6px 10px;
+      border-radius: var(--radius-sm);
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 12px;
+      outline: none;
+      cursor: pointer;
+      transition: border-color var(--transition);
+    }
+
+    select.styled:focus {
+      border-color: var(--teal);
+    }
+
+    /* ─── Centre canvas area ────────────────────────────────────────────────── */
+    .canvas-area {
+      display: flex;
+      flex-direction: column;
+      background: var(--bg);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .canvas-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .canvas-toolbar .info-chip {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--text-dim);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .canvas-wrap {
+      flex: 1;
+      overflow: auto;
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-start;
+      padding: 20px;
+      background: repeating-conic-gradient(rgba(255, 255, 255, .025) 0% 25%, transparent 0% 50%) 0 0 / 20px 20px;
+    }
+
+    /* Grid table */
+    .grid-table {
+      border-collapse: collapse;
+      cursor: crosshair;
+      user-select: none;
+    }
+
+    .grid-table td {
+      width: 24px;
+      height: 24px;
+      border: 0;
+      outline: 1px solid rgba(0, 0, 0, .25);
+      transition: filter .06s;
+    }
+
+    .grid-table td.cell-wall {
+      background: var(--cell-wall);
+      outline-color: rgba(255, 255, 255, .06);
+    }
+
+    .grid-table td.cell-walkable {
+      background: var(--cell-walkable);
+    }
+
+    .grid-table td.cell-exit {
+      background: var(--cell-exit);
+      outline-color: rgba(0, 0, 0, .15);
+    }
+
+    .grid-table td:hover {
+      filter: brightness(1.3);
+    }
+
+    /* Heatmap overlay (applied via inline style on td) */
+    .grid-table td.heatmap {
+      outline-color: transparent;
+    }
+
+    /* ─── Right panel (results) ─────────────────────────────────────────────── */
+    .panel-right {
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .results-header {
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .results-header h2 {
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .results-header p {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 2px;
+    }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      padding: 0 8px;
+    }
+
+    .tab {
+      padding: 10px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-dim);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: color var(--transition), border-color var(--transition);
+      white-space: nowrap;
+    }
+
+    .tab:hover {
+      color: var(--text);
+    }
+
+    .tab.active {
+      color: var(--teal);
+      border-bottom-color: var(--teal);
+    }
+
+    .tab-body {
+      display: none;
+      padding: 14px 16px;
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .tab-body.active {
+      display: block;
+    }
+
+    /* Stat cards */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .stat-card {
+      padding: 10px 12px;
+      border-radius: var(--radius);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+    }
+
+    .stat-card .stat-label {
+      font-size: 10px;
+      color: var(--text-dimmer);
+      text-transform: uppercase;
+      letter-spacing: .8px;
+    }
+
+    .stat-card .stat-value {
+      font-size: 20px;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+      margin-top: 2px;
+      color: var(--text);
+    }
+
+    .stat-card .stat-unit {
+      font-size: 10px;
+      color: var(--text-dim);
+    }
+
+    .stat-card.accent-teal {
+      border-color: rgba(46, 196, 182, .3);
+    }
+
+    .stat-card.accent-violet {
+      border-color: rgba(124, 111, 247, .3);
+    }
+
+    /* Log / output area */
+    .log-box {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--text-dim);
+      min-height: 60px;
+      max-height: 220px;
+      overflow-y: auto;
+      line-height: 1.7;
+      white-space: pre-wrap;
+    }
+
+    .log-box .log-ok {
+      color: var(--teal);
+    }
+
+    .log-box .log-err {
+      color: var(--coral);
+    }
+
+    .log-box .log-warn {
+      color: var(--amber);
+    }
+
+    .log-box .log-dim {
+      color: var(--text-dimmer);
+    }
+
+    /* Result rows */
+    .result-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+    }
+
+    .result-row:last-child {
+      border-bottom: none;
+    }
+
+    .result-row .rk {
+      color: var(--text-dim);
+    }
+
+    .result-row .rv {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 500;
+    }
+
+    .rv.good {
+      color: var(--teal);
+    }
+
+    .rv.warn {
+      color: var(--amber);
+    }
+
+    .rv.bad {
+      color: var(--coral);
+    }
+
+    /* Wall optimization table */
+    .opt-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11.5px;
+      margin-top: 8px;
+    }
+
+    .opt-table th {
+      text-align: left;
+      padding: 4px 6px;
+      color: var(--text-dimmer);
+      font-weight: 500;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .opt-table td {
+      padding: 5px 6px;
+      font-family: 'JetBrains Mono', monospace;
+      border-bottom: 1px solid rgba(255, 255, 255, .04);
+    }
+
+    .opt-table tr.best-row td {
+      color: var(--teal);
+    }
+
+    /* Legend */
+    .legend {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    .legend-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 2px;
+    }
+
+    /* Spinner */
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255, 255, 255, .15);
+      border-top-color: var(--teal);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* Toast notifications */
+    #toast-stack {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 1000;
+    }
+
+    .toast {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      border-radius: var(--radius);
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      font-size: 12.5px;
+      box-shadow: var(--shadow);
+      animation: toast-in .25s ease-out;
+      max-width: 340px;
+    }
+
+    .toast.toast-ok {
+      border-left: 3px solid var(--teal);
+    }
+
+    .toast.toast-err {
+      border-left: 3px solid var(--coral);
+    }
+
+    .toast.toast-warn {
+      border-left: 3px solid var(--amber);
+    }
+
+    @keyframes toast-in {
+      from {
+        opacity: 0;
+        transform: translateX(20px);
+      }
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, .1);
+      border-radius: 10px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, .2);
+    }
+
+    /* Progress bar */
+    .progress-bar {
+      height: 3px;
+      width: 100%;
+      background: var(--surface3);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--teal), var(--violet));
+      border-radius: 2px;
+      transition: width .4s ease;
+      animation: shimmer 1.5s ease-in-out infinite;
+    }
+
+    @keyframes shimmer {
+      0% {
+        filter: brightness(1);
+      }
+
+      50% {
+        filter: brightness(1.4);
+      }
+
+      100% {
+        filter: brightness(1);
+      }
+    }
+
+    /* Heatmap legend gradient */
+    .heatmap-legend {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      font-size: 11px;
+    }
+
+    .heatmap-gradient {
+      flex: 1;
+      height: 10px;
+      border-radius: 4px;
+      background: linear-gradient(90deg, #001f3f, #0d6efd, #2ec4b6, #ffa94d, #ff6b6b);
+    }
+
+    /* ─── Overlay / loading screen ──────────────────────────────────────────── */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(13, 15, 23, .85);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      z-index: 500;
+      backdrop-filter: blur(4px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .3s;
+    }
+
+    .overlay.visible {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .overlay-text {
+      font-size: 14px;
+      color: var(--text-dim);
+    }
+
+    /* ─── Responsive ────────────────────────────────────────────────────────── */
+    @media (max-width: 900px) {
+      .shell {
+        grid-template-columns: 240px 1fr;
+        grid-template-rows: 56px 1fr;
+      }
+
+      .panel-right {
+        display: none;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="shell">
+    <!-- ═══ TOP BAR ═══════════════════════════════════════════════════════════ -->
+    <header class="topbar">
+      <div class="topbar-logo">
+        <div class="logo-icon">🚪</div>
+        TheSafeExit
+      </div>
+      <div class="topbar-sep"></div>
+      <div class="topbar-status">
+        <div class="status-dot" id="status-dot"></div>
+        <span id="status-text">Ready — draw a floor plan and run analysis</span>
+      </div>
+      <div class="topbar-controls">
+        <button class="btn btn-ghost" id="btn-clear" title="Clear grid">🗑 Clear</button>
+        <button class="btn btn-ghost" id="btn-template" title="Load a template room">📐 Template</button>
+        <button class="btn btn-ghost" id="btn-export" title="Copy grid as JSON">⬇ Export</button>
+        <button class="btn btn-primary" id="btn-analyze">⚡ Analyze</button>
+      </div>
+    </header>
+
+    <!-- ═══ LEFT PANEL ════════════════════════════════════════════════════════ -->
+    <aside class="panel-left">
+
+      <div class="panel-section">
+        <div class="section-label">Draw Tool</div>
+        <div class="tool-grid">
+          <button class="tool-btn active" id="tool-wall" data-tool="wall">
+            <span class="tool-icon">■</span>Wall
+          </button>
+          <button class="tool-btn" id="tool-walkable" data-tool="walkable">
+            <span class="tool-icon">□</span>Floor
+          </button>
+          <button class="tool-btn" id="tool-exit" data-tool="exit">
+            <span class="tool-icon">🚪</span>Exit
+          </button>
+          <button class="tool-btn" id="tool-erase" data-tool="erase">
+            <span class="tool-icon">⌫</span>Erase
+          </button>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div class="section-label">Grid Size</div>
+        <div class="size-row" style="margin-bottom:6px">
+          <span class="size-label">Rows</span>
+          <input type="number" id="input-rows" value="20" min="5" max="60">
+        </div>
+        <div class="size-row" style="margin-bottom:10px">
+          <span class="size-label">Cols</span>
+          <input type="number" id="input-cols" value="20" min="5" max="60">
+        </div>
+        <button class="btn btn-ghost" style="width:100%" id="btn-resize">↔ Apply Size</button>
+      </div>
+
+      <div class="panel-section">
+        <div class="section-label">Analysis Chain (Static Boundary Cases)</div>
+        <select class="styled" id="select-chain">
+          <option value="rational">Rational — no panic (λ=0 limit)</option>
+          <option value="uniform">Uniform — full panic (λ=1 limit)</option>
+        </select>
+        <div style="margin-top:8px;font-size:11px;color:var(--text-dimmer);line-height:1.6">
+          These are the two static boundary cases of the panic model. Use <strong>Simulate Panic</strong> below for the full dynamic coupled simulation.
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div class="section-label">Panic Simulation (Dynamic Coupled)</div>
+        <div class="size-row" style="margin-bottom:6px">
+          <span class="size-label">Agents</span>
+          <input type="number" id="sim-agents" value="30" min="1" max="300">
+        </div>
+        <div class="size-row" style="margin-bottom:6px">
+          <span class="size-label">Sensitivity β</span>
+          <input type="number" id="sim-beta" value="0.4" min="0" max="2" step="0.05">
+        </div>
+        <div class="size-row" style="margin-bottom:6px">
+          <span class="size-label">Diffusion D</span>
+          <input type="number" id="sim-d" value="0.3" min="0.01" max="1.0" step="0.05">
+        </div>
+        <div class="size-row" style="margin-bottom:6px">
+          <span class="size-label">Source k</span>
+          <input type="number" id="sim-k" value="0.5" min="0" max="2.0" step="0.05">
+        </div>
+        <div class="size-row" style="margin-bottom:6px">
+          <span class="size-label">Max steps</span>
+          <input type="number" id="sim-max-steps" value="60" min="10" max="200" step="10">
+        </div>
+        <div class="size-row" style="margin-bottom:10px">
+          <span class="size-label">Snapshot every</span>
+          <input type="number" id="sim-snap-every" value="5" min="1" max="20">
+        </div>
+        <div style="font-size:11px;color:var(--text-dimmer);margin-bottom:10px;line-height:1.5">
+          Couples agent crowd density to panic PDE diffusion (<span style="font-family:monospace">du/dt = D∇²u + kρ</span>), dynamically mixing matrices (<span style="font-family:monospace">λ_t = β·u</span>). Initial agents are placed uniformly across walkable floor cells.
+        </div>
+        <button class="btn btn-primary" style="width:100%;background:linear-gradient(135deg, #ff9f43, #ff5252);color:#fff;box-shadow:0 4px 14px rgba(255,82,82,.3)" id="btn-simulate">🔥 Simulate Panic</button>
+      </div>
+
+      <div class="panel-section">
+        <div class="section-label">Monte Carlo</div>
+        <div class="size-row" style="margin-bottom:8px">
+          <span class="size-label">Trials</span>
+          <input type="number" id="input-trials" value="2000" min="100" max="50000" step="500">
+        </div>
+        <div style="font-size:11px;color:var(--text-dimmer);margin-bottom:8px;line-height:1.5">
+          Click any floor cell after analyzing to run Monte Carlo from that cell.
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div class="section-label">Exit Optimizer</div>
+        <div class="size-row" style="margin-bottom:8px">
+          <span class="size-label">Exit width</span>
+          <input type="number" id="input-exit-width" value="2" min="1" max="10">
+        </div>
+        <div style="font-size:11px;color:var(--text-dimmer);margin-bottom:10px;line-height:1.5">
+          Runs BFGS on all 4 walls. Interior walls you draw become obstacles. May take 5–20 s.
+        </div>
+        <button class="btn btn-violet" style="width:100%" id="btn-optimize">🎯 Optimize Exits</button>
+      </div>
+
+      <div class="panel-section">
+        <div class="section-label">Heatmap View</div>
+        <select class="styled" id="select-heatmap">
+          <option value="none">None (cell colours)</option>
+          <option value="expected">Expected evac. time (N_t)</option>
+          <option value="panic">Panic contagion level (u_t)</option>
+          <option value="distance">Geodesic distance (d)</option>
+        </select>
+      </div>
+
+    </aside>
+
+    <!-- ═══ CANVAS AREA ═══════════════════════════════════════════════════════ -->
+    <main class="canvas-area">
+      <div class="canvas-toolbar">
+        <div class="info-chip" id="chip-size">20 × 20</div>
+        <div class="info-chip" id="chip-cursor">—</div>
+        <div class="info-chip" id="chip-cell-val">—</div>
+        <div style="flex:1"></div>
+        <button class="btn btn-ghost btn-sm" id="btn-zoom-in">＋</button>
+        <button class="btn btn-ghost btn-sm" id="btn-zoom-out">－</button>
+        <button class="btn btn-ghost btn-sm" id="btn-zoom-fit">Fit</button>
+      </div>
+      <div class="canvas-wrap" id="canvas-wrap">
+        <table class="grid-table" id="grid-table"></table>
+      </div>
+    </main>
+
+    <!-- ═══ RIGHT PANEL ════════════════════════════════════════════════════════ -->
+    <aside class="panel-right">
+      <div class="results-header">
+        <h2>Analysis Results</h2>
+        <p id="results-subtitle">Run analysis to see results here.</p>
+      </div>
+
+      <div class="tabs">
+        <div class="tab active" data-tab="overview">Overview</div>
+        <div class="tab" data-tab="simulation">Simulation</div>
+        <div class="tab" data-tab="montecarlo">Monte Carlo</div>
+        <div class="tab" data-tab="optimizer">Optimizer</div>
+        <div class="tab" data-tab="log">Log</div>
+      </div>
+
+      <!-- Overview tab -->
+      <div class="tab-body active" id="tab-overview">
+        <div class="stat-grid" id="stat-grid">
+          <div class="stat-card accent-teal">
+            <div class="stat-label">Worst-case</div>
+            <div class="stat-value" id="stat-worst">—</div>
+            <div class="stat-unit">steps</div>
+          </div>
+          <div class="stat-card accent-violet">
+            <div class="stat-label">Mean evac.</div>
+            <div class="stat-value" id="stat-mean">—</div>
+            <div class="stat-unit">steps</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Transient states</div>
+            <div class="stat-value" id="stat-transient">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Exit cells</div>
+            <div class="stat-value" id="stat-exits">—</div>
+          </div>
+        </div>
+
+        <div style="margin-bottom:8px">
+          <div class="section-label" style="margin-bottom:6px">Heatmap legend</div>
+          <div class="heatmap-legend">
+            <span style="font-size:11px;color:var(--text-dimmer)">Low</span>
+            <div class="heatmap-gradient"></div>
+            <span style="font-size:11px;color:var(--text-dimmer)">High</span>
+          </div>
+        </div>
+
+        <div class="legend">
+          <div class="legend-item">
+            <div class="legend-swatch" style="background:var(--cell-wall);border:1px solid rgba(255,255,255,.15)"></div>
+            Wall
+          </div>
+          <div class="legend-item">
+            <div class="legend-swatch" style="background:var(--cell-walkable)"></div>Walkable
+          </div>
+          <div class="legend-item">
+            <div class="legend-swatch" style="background:var(--cell-exit)"></div>Exit
+          </div>
+        </div>
+      </div>
+
+      <!-- Simulation tab -->
+      <div class="tab-body" id="tab-simulation">
+        <div style="margin-bottom:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <span class="section-label" style="margin-bottom:0">Time Scrubber</span>
+            <span id="sim-frame-label" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--teal)">Step — / —</span>
+          </div>
+          <input type="range" id="sim-scrubber" min="0" max="0" value="0" style="width:100%;accent-color:var(--teal);cursor:pointer;" disabled>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <button class="btn btn-ghost btn-sm" id="btn-sim-prev" disabled>⏮ Prev</button>
+            <button class="btn btn-ghost btn-sm" id="btn-sim-play" style="flex:1" disabled>▶ Play</button>
+            <button class="btn btn-ghost btn-sm" id="btn-sim-next" disabled>Next ⏭</button>
+          </div>
+        </div>
+
+        <div class="stat-grid" style="grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px">
+          <div class="stat-card accent-teal" style="padding:8px 10px">
+            <div class="stat-label">Frame J(t)</div>
+            <div class="stat-value" id="sim-stat-jt" style="font-size:16px">—</div>
+            <div class="stat-unit" id="sim-stat-jratio">vs J* = —</div>
+          </div>
+          <div class="stat-card accent-violet" style="padding:8px 10px">
+            <div class="stat-label">Mean Panic</div>
+            <div class="stat-value" id="sim-stat-panic" style="font-size:16px">—</div>
+            <div class="stat-unit" id="sim-stat-active">Active: —</div>
+          </div>
+        </div>
+
+        <div style="margin-bottom:12px">
+          <div class="section-label" style="margin-bottom:6px">Worst-Case J(t) vs Baseline J*</div>
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:8px;position:relative">
+            <canvas id="sim-sparkline" width="270" height="100" style="width:100%;height:100px;display:block"></canvas>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:4px;font-size:10px;color:var(--text-dimmer)">
+            <span>t = 0 (J* = <span id="spark-j0">—</span>)</span>
+            <span style="color:var(--coral)">● J(t) panic feedback</span>
+            <span>t = max</span>
+          </div>
+        </div>
+
+        <div id="sim-final-card" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:10px;font-size:11.5px">
+          <div class="section-label" style="margin-bottom:6px">Simulation Summary</div>
+          <div class="result-row"><span class="rk">Total steps</span><span class="rv" id="sim-sum-steps">—</span></div>
+          <div class="result-row"><span class="rk">Evacuated</span><span class="rv" id="sim-sum-evac">—</span></div>
+          <div class="result-row"><span class="rk">Evacuation rate</span><span class="rv" id="sim-sum-rate">—</span></div>
+          <div class="result-row"><span class="rk">Mean evac. time</span><span class="rv" id="sim-sum-mean">—</span></div>
+        </div>
+      </div>
+
+      <!-- Monte Carlo tab -->
+      <div class="tab-body" id="tab-montecarlo">
+        <div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;line-height:1.6">
+          Click any walkable cell on the grid after running analysis to sample from that position.
+        </div>
+        <div id="mc-results">
+          <div class="result-row">
+            <span class="rk">MC mean</span>
+            <span class="rv" id="mc-mean">—</span>
+          </div>
+          <div class="result-row">
+            <span class="rk">Std error</span>
+            <span class="rv" id="mc-stderr">—</span>
+          </div>
+          <div class="result-row">
+            <span class="rk">Analytic (N·1)</span>
+            <span class="rv" id="mc-analytic">—</span>
+          </div>
+          <div class="result-row">
+            <span class="rk">Difference</span>
+            <span class="rv" id="mc-diff">—</span>
+          </div>
+          <div class="result-row">
+            <span class="rk">Trials</span>
+            <span class="rv" id="mc-trials">—</span>
+          </div>
+          <div class="result-row">
+            <span class="rk">Chain</span>
+            <span class="rv" id="mc-chain">—</span>
+          </div>
+          <div class="result-row">
+            <span class="rk">Cell</span>
+            <span class="rv" id="mc-cell">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Optimizer tab -->
+      <div class="tab-body" id="tab-optimizer">
+        <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.6">
+          BFGS minimizes worst-case expected evacuation time J across all 4 walls.
+        </div>
+        <div id="opt-results">
+          <div class="result-row">
+            <span class="rk">Best wall</span>
+            <span class="rv" id="opt-best-wall">—</span>
+          </div>
+          <div class="result-row">
+            <span class="rk">Best position</span>
+            <span class="rv" id="opt-best-pos">—</span>
+          </div>
+          <div class="result-row">
+            <span class="rk">Best J</span>
+            <span class="rv" id="opt-best-j">—</span>
+          </div>
+        </div>
+        <table class="opt-table" id="opt-table">
+          <thead>
+            <tr>
+              <th>Wall</th>
+              <th>Position</th>
+              <th>J</th>
+              <th>Iters</th>
+              <th>✓</th>
+            </tr>
+          </thead>
+          <tbody id="opt-tbody"></tbody>
+        </table>
+      </div>
+
+      <!-- Log tab -->
+      <div class="tab-body" id="tab-log">
+        <div class="log-box" id="log-box">Waiting for operations...\n</div>
+        <div style="margin-top:8px;display:flex;gap:6px">
+          <button class="btn btn-ghost btn-xs" id="btn-clear-log">Clear log</button>
+        </div>
+      </div>
+
+    </aside>
+  </div>
+
+  <!-- Overlay -->
+  <div class="overlay" id="overlay">
+    <div class="spinner" style="width:32px;height:32px;border-width:3px"></div>
+    <div class="overlay-text" id="overlay-text">Running analysis…</div>
+    <div style="width:200px">
+      <div class="progress-bar">
+        <div class="progress-fill" style="width:100%"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast stack -->
+  <div id="toast-stack"></div>
+
+  <!-- ═══ JAVASCRIPT ═════════════════════════════════════════════════════════ -->
+  <script>
+    'use strict';
+
+    // ─── Constants ──────────────────────────────────────────────────────────────
+    const API_BASE = window.location.origin;  // Same-origin Flask server
+
+    const CELL = { WALL: 0, WALKABLE: 1, EXIT: 2 };
+    const CELL_CLASS = ['cell-wall', 'cell-walkable', 'cell-exit'];
+    const TOOL_CELL = { wall: 0, walkable: 1, exit: 2, erase: 1 };
+
+    // ─── State ──────────────────────────────────────────────────────────────────
+    let grid = [];           // 2D array of ints
+    let rows = 20, cols = 20;
+    let activeTool = 'wall';
+    let cellSize = 24;
+    let isPainting = false;
+    let lastAnalysis = null;   // last /api/analyze response
+    let lastSimulation = null; // last /api/simulate response
+    let simCurrentFrame = 0;
+    let simPlayTimer = null;
+    let heatmapMode = 'none';
+
+    // ─── DOM refs ────────────────────────────────────────────────────────────────
+    const gridEl = document.getElementById('grid-table');
+    const canvasWrap = document.getElementById('canvas-wrap');
+    const statusDot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+    const chipSize = document.getElementById('chip-size');
+    const chipCursor = document.getElementById('chip-cursor');
+    const chipCellVal = document.getElementById('chip-cell-val');
+    const logBox = document.getElementById('log-box');
+    const overlay = document.getElementById('overlay');
+    const overlayText = document.getElementById('overlay-text');
+
+    // ─── Helpers ─────────────────────────────────────────────────────────────────
+    function setStatus(state, msg) {
+      statusDot.className = 'status-dot ' + (state || '');
+      statusText.textContent = msg;
+    }
+
+    function log(msg, cls = '') {
+      const line = document.createElement('span');
+      if (cls) line.className = 'log-' + cls;
+      line.textContent = msg + '\n';
+      logBox.appendChild(line);
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    function toast(msg, type = 'ok') {
+      const t = document.createElement('div');
+      t.className = `toast toast-${type}`;
+      t.textContent = msg;
+      document.getElementById('toast-stack').appendChild(t);
+      setTimeout(() => t.remove(), 4000);
+    }
+
+    function showOverlay(msg = 'Running…') {
+      overlayText.textContent = msg;
+      overlay.classList.add('visible');
+    }
+    function hideOverlay() { overlay.classList.remove('visible'); }
+
+    function switchTab(name) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+      document.querySelectorAll('.tab-body').forEach(b => b.classList.toggle('active', b.id === 'tab-' + name));
+    }
+
+    // ─── Grid init & render ───────────────────────────────────────────────────────
+    function initGrid(r, c) {
+      rows = r; cols = c;
+      grid = Array.from({ length: rows }, (_, ri) =>
+        Array.from({ length: cols }, (_, ci) => {
+          if (ri === 0 || ri === rows - 1 || ci === 0 || ci === cols - 1) return CELL.WALL;
+          return CELL.WALKABLE;
+        })
+      );
+      renderGrid();
+      chipSize.textContent = `${rows} × ${cols}`;
+      lastAnalysis = null;
+      applyHeatmap('none');
+      log(`Grid reset to ${rows}×${cols}`, 'dim');
+    }
+
+    function renderGrid() {
+      gridEl.innerHTML = '';
+      for (let r = 0; r < rows; r++) {
+        const tr = document.createElement('tr');
+        for (let c = 0; c < cols; c++) {
+          const td = document.createElement('td');
+          td.className = CELL_CLASS[grid[r][c]];
+          td.dataset.r = r; td.dataset.c = c;
+          td.style.width = td.style.height = cellSize + 'px';
+          tr.appendChild(td);
+        }
+        gridEl.appendChild(tr);
+      }
+      attachGridEvents();
+    }
+
+    function setCellValue(r, c, val) {
+      if (r < 0 || r >= rows || c < 0 || c >= cols) return;
+      grid[r][c] = val;
+      const td = gridEl.rows[r]?.cells[c];
+      if (td) {
+        td.className = CELL_CLASS[val];
+        td.style.background = '';   // clear heatmap
+        td.style.color = '';
+        td.style.fontSize = '';
+      }
+    }
+
+    // ─── Grid painting events ──────────────────────────────────────────────────
+    function cellFromEvent(e) {
+      const td = e.target.closest('td');
+      if (!td) return null;
+      return { r: +td.dataset.r, c: +td.dataset.c };
+    }
+
+    function paintCell(r, c) {
+      const newVal = TOOL_CELL[activeTool];
+      setCellValue(r, c, newVal);
+    }
+
+    function attachGridEvents() {
+      gridEl.addEventListener('mousedown', e => {
+        if (e.button !== 0) return;
+        isPainting = true;
+        const cell = cellFromEvent(e);
+        if (!cell) return;
+        paintCell(cell.r, cell.c);
+        e.preventDefault();
+      });
+
+      gridEl.addEventListener('mousemove', e => {
+        const cell = cellFromEvent(e);
+        if (cell) {
+          chipCursor.textContent = `(${cell.r}, ${cell.c})`;
+          const names = ['Wall', 'Floor', 'Exit'];
+          chipCellVal.textContent = names[grid[cell.r][cell.c]] ?? '?';
+        }
+        if (!isPainting || !cell) return;
+        paintCell(cell.r, cell.c);
+      });
+
+      // Monte Carlo: click on walkable cell
+      gridEl.addEventListener('click', async e => {
+        if (activeTool !== 'erase' && !e.shiftKey) return;
+        const cell = cellFromEvent(e);
+        if (!cell) return;
+        if (grid[cell.r][cell.c] !== CELL.WALKABLE) {
+          toast('Click a white (walkable) floor cell for Monte Carlo.', 'warn');
+          return;
+        }
+        if (!lastAnalysis) {
+          toast('Run Analyze first, then shift-click a cell.', 'warn');
+          return;
+        }
+        await runMonteCarlo(cell.r, cell.c);
+      });
+    }
+
+    // Shift-click handler on grid cells for MC sampling
+    gridEl.addEventListener('click', async e => {
+      if (!e.shiftKey) return;
+      const cell = cellFromEvent(e);
+      if (!cell) return;
+      if (grid[cell.r][cell.c] !== CELL.WALKABLE) {
+        toast('Shift-click a white floor cell for Monte Carlo.', 'warn');
+        return;
+      }
+      if (!lastAnalysis) {
+        toast('Run Analyze first, then shift-click a cell.', 'warn');
+        return;
+      }
+      await runMonteCarlo(cell.r, cell.c);
+    });
+
+    document.addEventListener('mouseup', () => { isPainting = false; });
+
+    // ─── Tool buttons ────────────────────────────────────────────────────────────
+    document.querySelectorAll('.tool-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        activeTool = btn.dataset.tool;
+        document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b === btn));
+      });
+    });
+
+    // ─── Grid size ───────────────────────────────────────────────────────────────
+    document.getElementById('btn-resize').addEventListener('click', () => {
+      const r = parseInt(document.getElementById('input-rows').value) || 20;
+      const c = parseInt(document.getElementById('input-cols').value) || 20;
+      initGrid(Math.max(5, Math.min(60, r)), Math.max(5, Math.min(60, c)));
+    });
+
+    // ─── Zoom ────────────────────────────────────────────────────────────────────
+    function setZoom(size) {
+      cellSize = Math.max(8, Math.min(48, size));
+      document.querySelectorAll('.grid-table td').forEach(td => {
+        td.style.width = td.style.height = cellSize + 'px';
+      });
+    }
+    document.getElementById('btn-zoom-in').addEventListener('click', () => setZoom(cellSize + 4));
+    document.getElementById('btn-zoom-out').addEventListener('click', () => setZoom(cellSize - 4));
+    document.getElementById('btn-zoom-fit').addEventListener('click', () => {
+      const wrap = canvasWrap.getBoundingClientRect();
+      const fit = Math.floor(Math.min((wrap.width - 40) / cols, (wrap.height - 40) / rows));
+      setZoom(Math.max(6, Math.min(40, fit)));
+    });
+
+    // ─── Clear / Template / Export ───────────────────────────────────────────────
+    document.getElementById('btn-clear').addEventListener('click', () => {
+      initGrid(rows, cols);
+      toast('Grid cleared.', 'ok');
+    });
+
+    document.getElementById('btn-template').addEventListener('click', () => {
+      const choice = prompt(
+        'Load template:\n1 — Simple room (20×20)\n2 — Two exits (20×20)\n3 — Room with pillar (20×20)\n4 — Room with barrier (20×20)\n\nEnter 1–4:',
+        '1'
+      );
+      loadTemplate(parseInt(choice) || 1);
+    });
+
+    function loadTemplate(n) {
+      initGrid(20, 20);
+      if (n === 1) {
+        // Default: right-wall exit (already done by initGrid border)
+        const mid = Math.floor(rows / 2);
+        grid[mid][cols - 1] = CELL.EXIT;
+        grid[mid + 1][cols - 1] = CELL.EXIT;
+      } else if (n === 2) {
+        const mid = Math.floor(rows / 2);
+        grid[mid][cols - 1] = CELL.EXIT; grid[mid + 1][cols - 1] = CELL.EXIT;
+        grid[mid][0] = CELL.EXIT; grid[mid + 1][0] = CELL.EXIT;
+      } else if (n === 3) {
+        const mid = Math.floor(rows / 2);
+        grid[mid][cols - 1] = CELL.EXIT; grid[mid + 1][cols - 1] = CELL.EXIT;
+        // Pillar 4×4 centred
+        for (let r = 8; r < 12; r++) for (let c = 8; c < 12; c++) grid[r][c] = CELL.WALL;
+      } else if (n === 4) {
+        const mid = Math.floor(rows / 2);
+        grid[mid][cols - 1] = CELL.EXIT; grid[mid + 1][cols - 1] = CELL.EXIT;
+        // Vertical barrier
+        for (let r = 1; r <= 13; r++) grid[r][10] = CELL.WALL;
+      }
+      renderGrid();
+      toast(`Template ${n} loaded.`, 'ok');
+    }
+
+    document.getElementById('btn-export').addEventListener('click', () => {
+      const json = JSON.stringify(grid);
+      navigator.clipboard.writeText(json).then(() => toast('Grid JSON copied to clipboard!', 'ok'));
+    });
+
+    // ─── Heatmap rendering ────────────────────────────────────────────────────────
+    document.getElementById('select-heatmap').addEventListener('change', e => {
+      applyHeatmap(e.target.value);
+    });
+
+    function applyHeatmap(mode) {
+      heatmapMode = mode;
+      const tds = gridEl.querySelectorAll('td');
+
+      if (mode === 'none') {
+        tds.forEach(td => {
+          const r = +td.dataset.r, c = +td.dataset.c;
+          td.style.background = '';
+          td.style.fontSize = '';
+          td.style.color = '';
+          td.className = CELL_CLASS[grid[r][c]];
+        });
+        return;
+      }
+
+      // If viewing dynamic simulation results
+      if (lastSimulation && lastSimulation.frames && lastSimulation.frames.length && (mode === 'expected' || mode === 'panic')) {
+        applySimHeatmap(lastSimulation.frames[simCurrentFrame], mode);
+        return;
+      }
+
+      if (!lastAnalysis) {
+        tds.forEach(td => {
+          const r = +td.dataset.r, c = +td.dataset.c;
+          td.style.background = '';
+          td.style.fontSize = '';
+          td.style.color = '';
+          td.className = CELL_CLASS[grid[r][c]];
+        });
+        return;
+      }
+
+      let data;
+      if (mode === 'expected' && lastAnalysis.expected_times) {
+        data = lastAnalysis.expected_times;
+      } else if (mode === 'distance' && lastAnalysis.distance_field) {
+        data = lastAnalysis.distance_field;
+      } else if (mode === 'panic') {
+        toast('Run Panic Simulation to see dynamic panic field u(x,y,t).', 'warn');
+        return;
+      } else { return; }
+
+      // Find min/max ignoring nulls and -1
+      let mn = Infinity, mx = -Infinity;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const v = data[r]?.[c];
+          if (v !== null && v !== undefined && v >= 0) {
+            mn = Math.min(mn, v); mx = Math.max(mx, v);
+          }
+        }
+      }
+      const range = mx - mn || 1;
+
+      tds.forEach(td => {
+        const r = +td.dataset.r, c = +td.dataset.c;
+        const v = data[r]?.[c];
+        if (v === null || v === undefined || v < 0) {
+          td.style.background = '';
+          td.className = CELL_CLASS[grid[r][c]];
+          return;
+        }
+        const t = (v - mn) / range;
+        td.style.background = heatColor(t);
+        td.className = 'heatmap';
+        td.style.color = t > 0.6 ? '#fff' : '#000';
+        td.style.fontSize = '0';
+      });
+    }
+
+    function applySimHeatmap(frame, mode) {
+      if (!frame) return;
+      const tds = gridEl.querySelectorAll('td');
+      const data = mode === 'panic' ? frame.panic : frame.heatmap;
+      let vmin = mode === 'panic' ? 0.0 : (lastSimulation.vmin ?? 0.0);
+      let vmax = mode === 'panic' ? (lastSimulation.panic_max || 1.0) : (lastSimulation.vmax ?? 10.0);
+      if (vmax <= vmin) vmax = vmin + 1.0;
+      const range = vmax - vmin;
+
+      tds.forEach(td => {
+        const r = +td.dataset.r, c = +td.dataset.c;
+        if (grid[r][c] === CELL.WALL) {
+          td.style.background = '';
+          td.className = CELL_CLASS[CELL.WALL];
+          return;
+        }
+        if (grid[r][c] === CELL.EXIT) {
+          td.style.background = '';
+          td.className = CELL_CLASS[CELL.EXIT];
+          return;
+        }
+        const v = data?.[r]?.[c];
+        if (v === null || v === undefined || v < 0) {
+          td.style.background = '';
+          td.className = CELL_CLASS[grid[r][c]];
+          return;
+        }
+        const t = Math.max(0, Math.min(1, (v - vmin) / range));
+        td.style.background = heatColor(t);
+        td.className = 'heatmap';
+        td.style.color = t > 0.6 ? '#fff' : '#000';
+        td.style.fontSize = '0';
+      });
+    }
+
+    function heatColor(t) {
+      // Blue → teal → yellow → red gradient
+      const stops = [
+        [0, [0, 31, 63]],
+        [0.25, [13, 110, 253]],
+        [0.5, [46, 196, 182]],
+        [0.75, [255, 169, 77]],
+        [1.0, [255, 107, 107]],
+      ];
+      let i = 0;
+      while (i < stops.length - 2 && t > stops[i + 1][0]) i++;
+      const [t0, c0] = stops[i];
+      const [t1, c1] = stops[i + 1];
+      const f = (t - t0) / (t1 - t0);
+      const r = Math.round(c0[0] + f * (c1[0] - c0[0]));
+      const g = Math.round(c0[1] + f * (c1[1] - c0[1]));
+      const b = Math.round(c0[2] + f * (c1[2] - c0[2]));
+      return `rgb(${r},${g},${b})`;
+    }
+
+    // ─── Simulation Scrubber & Sparkline ──────────────────────────────────────────
+    function renderSimFrame(idx) {
+      if (!lastSimulation || !lastSimulation.frames || !lastSimulation.frames.length) return;
+      if (idx < 0) idx = 0;
+      if (idx >= lastSimulation.frames.length) idx = lastSimulation.frames.length - 1;
+      simCurrentFrame = idx;
+
+      const scrubber = document.getElementById('sim-scrubber');
+      scrubber.value = idx;
+
+      const frame = lastSimulation.frames[idx];
+      const nFrames = lastSimulation.frames.length;
+      document.getElementById('sim-frame-label').textContent = `Step ${frame.t} (${idx + 1}/${nFrames})`;
+
+      const jRat = lastSimulation.rational_J;
+      const deltaPct = jRat > 0 ? ((frame.worst_case - jRat) / jRat * 100).toFixed(1) : '0';
+      const sign = frame.worst_case >= jRat ? '+' : '';
+
+      document.getElementById('sim-stat-jt').textContent = `${frame.worst_case.toFixed(1)} steps`;
+      document.getElementById('sim-stat-jratio').textContent = `vs J* = ${jRat.toFixed(1)} (${sign}${deltaPct}%)`;
+      document.getElementById('sim-stat-panic').textContent = frame.mean_panic.toFixed(3);
+      document.getElementById('sim-stat-active').textContent = `Active: ${frame.active_agents} / ${lastSimulation.n_agents_start}`;
+
+      // Update sparkline
+      drawSparkline();
+
+      // Render on grid
+      if (heatmapMode === 'expected' || heatmapMode === 'panic') {
+        applySimHeatmap(frame, heatmapMode);
+      }
+    }
+
+    function drawSparkline() {
+      const canvas = document.getElementById('sim-sparkline');
+      if (!canvas || !lastSimulation || !lastSimulation.frames) return;
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      const cw = rect.width || 270;
+      const ch = rect.height || 100;
+      canvas.width = cw * dpr;
+      canvas.height = ch * dpr;
+      ctx.scale(dpr, dpr);
+
+      ctx.clearRect(0, 0, cw, ch);
+
+      const frames = lastSimulation.frames;
+      const jRat = lastSimulation.rational_J;
+      const jVals = frames.map(f => f.worst_case);
+
+      const allVals = [jRat, ...jVals];
+      let minVal = Math.min(...allVals) * 0.95;
+      let maxVal = Math.max(...allVals) * 1.05;
+      if (maxVal <= minVal) maxVal = minVal + 1.0;
+      const valRange = maxVal - minVal;
+
+      const padLeft = 32, padRight = 14, padTop = 16, padBottom = 18;
+      const plotW = cw - padLeft - padRight;
+      const plotH = ch - padTop - padBottom;
+
+      function getY(v) {
+        return padTop + plotH - ((v - minVal) / valRange) * plotH;
+      }
+      function getX(i) {
+        if (frames.length <= 1) return padLeft + plotW / 2;
+        return padLeft + (i / (frames.length - 1)) * plotW;
+      }
+
+      // Horizontal dashed line for rational baseline J*
+      const baseRatY = getY(jRat);
+      ctx.save();
+      ctx.strokeStyle = '#7c6ff7';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(padLeft, baseRatY);
+      ctx.lineTo(padLeft + plotW, baseRatY);
+      ctx.stroke();
+
+      // Baseline text
+      ctx.fillStyle = '#7c6ff7';
+      ctx.font = '9px "JetBrains Mono", monospace';
+      ctx.fillText(`J*=${jRat.toFixed(0)}`, 2, Math.max(10, Math.min(ch - 4, baseRatY + 3)));
+      ctx.restore();
+
+      // Area under curve
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(getX(0), getY(frames[0].worst_case));
+      for (let i = 1; i < frames.length; i++) {
+        ctx.lineTo(getX(i), getY(frames[i].worst_case));
+      }
+      ctx.lineTo(getX(frames.length - 1), padTop + plotH);
+      ctx.lineTo(getX(0), padTop + plotH);
+      ctx.closePath();
+      const grad = ctx.createLinearGradient(0, padTop, 0, padTop + plotH);
+      grad.addColorStop(0, 'rgba(255, 107, 107, 0.3)');
+      grad.addColorStop(1, 'rgba(255, 107, 107, 0.0)');
+      ctx.fillStyle = grad;
+      ctx.fill();
+      ctx.restore();
+
+      // J(t) Polyline
+      ctx.save();
+      ctx.strokeStyle = '#ff6b6b';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      for (let i = 0; i < frames.length; i++) {
+        const x = getX(i);
+        const y = getY(frames[i].worst_case);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.restore();
+
+      // Points and active cursor
+      for (let i = 0; i < frames.length; i++) {
+        const x = getX(i);
+        const y = getY(frames[i].worst_case);
+        ctx.beginPath();
+        ctx.arc(x, y, i === simCurrentFrame ? 5 : 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = i === simCurrentFrame ? '#2ec4b6' : '#ff6b6b';
+        ctx.fill();
+        if (i === simCurrentFrame) {
+          ctx.strokeStyle = '#fff';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
+      }
+
+      // Vertical cursor at simCurrentFrame
+      const curX = getX(simCurrentFrame);
+      ctx.save();
+      ctx.strokeStyle = 'rgba(46, 196, 182, 0.6)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 2]);
+      ctx.beginPath();
+      ctx.moveTo(curX, padTop);
+      ctx.lineTo(curX, padTop + plotH);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // ─── Playback Controls ────────────────────────────────────────────────────────
+    document.getElementById('sim-scrubber').addEventListener('input', e => {
+      stopSimPlayback();
+      renderSimFrame(parseInt(e.target.value) || 0);
+    });
+
+    document.getElementById('btn-sim-prev').addEventListener('click', () => {
+      stopSimPlayback();
+      renderSimFrame(simCurrentFrame - 1);
+    });
+
+    document.getElementById('btn-sim-next').addEventListener('click', () => {
+      stopSimPlayback();
+      renderSimFrame(simCurrentFrame + 1);
+    });
+
+    document.getElementById('btn-sim-play').addEventListener('click', toggleSimPlayback);
+
+    function toggleSimPlayback() {
+      if (simPlayTimer) {
+        stopSimPlayback();
+      } else {
+        startSimPlayback();
+      }
+    }
+
+    function startSimPlayback() {
+      if (!lastSimulation || !lastSimulation.frames || lastSimulation.frames.length <= 1) return;
+      const playBtn = document.getElementById('btn-sim-play');
+      playBtn.textContent = '⏸ Pause';
+      playBtn.className = 'btn btn-primary btn-sm';
+      simPlayTimer = setInterval(() => {
+        const next = (simCurrentFrame + 1) % lastSimulation.frames.length;
+        renderSimFrame(next);
+      }, 350);
+    }
+
+    function stopSimPlayback() {
+      if (simPlayTimer) {
+        clearInterval(simPlayTimer);
+        simPlayTimer = null;
+      }
+      const playBtn = document.getElementById('btn-sim-play');
+      if (playBtn) {
+        playBtn.textContent = '▶ Play';
+        playBtn.className = 'btn btn-ghost btn-sm';
+      }
+    }
+
+    // ─── Simulate Panic Handler ───────────────────────────────────────────────────
+    document.getElementById('btn-simulate').addEventListener('click', runSimulation);
+
+    async function runSimulation() {
+      const numAgents = parseInt(document.getElementById('sim-agents').value) || 30;
+      const beta = parseFloat(document.getElementById('sim-beta').value) || 0.4;
+      const D = parseFloat(document.getElementById('sim-d').value) || 0.3;
+      const k = parseFloat(document.getElementById('sim-k').value) || 0.5;
+      const maxSteps = parseInt(document.getElementById('sim-max-steps').value) || 60;
+      const snapshotEvery = parseInt(document.getElementById('sim-snap-every').value) || 5;
+
+      setStatus('running', 'Simulating panic & solving dynamic fundamental matrices…');
+      showOverlay(`Running panic diffusion PDE & dynamic matrix coupling…\n(${numAgents} agents, β=${beta}, D=${D}, k=${k})`);
+      log(`--- Simulate Panic (${rows}×${cols}, N=${numAgents}, β=${beta}, D=${D}, k=${k}) ---`, 'dim');
+
+      try {
+        const resp = await fetch(`${API_BASE}/api/simulate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            grid,
+            num_agents: numAgents,
+            beta,
+            D,
+            k,
+            max_steps: maxSteps,
+            snapshot_every: snapshotEvery,
+          }),
+        });
+        const data = await resp.json();
+        hideOverlay();
+
+        if (!data.ok) {
+          setStatus('error', 'Simulation failed.');
+          log(`ERROR: ${data.error}`, 'err');
+          toast('Simulation failed: ' + data.error, 'err');
+          return;
+        }
+
+        lastSimulation = data;
+        stopSimPlayback();
+
+        const nFrames = data.frames.length;
+        const scrubber = document.getElementById('sim-scrubber');
+        scrubber.min = 0;
+        scrubber.max = nFrames - 1;
+        scrubber.value = 0;
+        scrubber.disabled = false;
+
+        document.getElementById('btn-sim-play').disabled = false;
+        document.getElementById('btn-sim-prev').disabled = false;
+        document.getElementById('btn-sim-next').disabled = false;
+        document.getElementById('spark-j0').textContent = data.rational_J.toFixed(1);
+
+        // Fill summary card
+        const sum = data.final_stats;
+        if (sum) {
+          document.getElementById('sim-sum-steps').textContent = sum.total_steps;
+          document.getElementById('sim-sum-evac').textContent = `${sum.evacuated_agents} / ${data.n_agents_start}`;
+          document.getElementById('sim-sum-rate').textContent = `${(sum.evacuation_rate * 100).toFixed(1)}%`;
+          document.getElementById('sim-sum-mean').textContent = sum.mean_evacuation_time ? `${sum.mean_evacuation_time.toFixed(1)} steps` : 'N/A';
+          document.getElementById('sim-final-card').style.display = 'block';
+        }
+
+        const jStart = data.frames[0]?.worst_case || data.rational_J;
+        const jEnd = data.frames[data.frames.length - 1]?.worst_case || jStart;
+        const growthPct = ((jEnd - data.rational_J) / data.rational_J * 100).toFixed(1);
+
+        setStatus('online', `Simulation complete — J* ${data.rational_J.toFixed(1)} → peak ${jEnd.toFixed(1)} (+${growthPct}%).`);
+        log(`ok  snapshots=${nFrames}  baseline_J*=${data.rational_J}  peak_J=${jEnd} (+${growthPct}%)`, 'ok');
+        log(`    evacuated=${sum?.evacuated_agents}/${data.n_agents_start} (${(sum?.evacuation_rate * 100).toFixed(1)}%) in ${sum?.total_steps} steps`, '');
+
+        // Set heatmap mode to expected if none
+        if (heatmapMode === 'none') {
+          document.getElementById('select-heatmap').value = 'expected';
+          heatmapMode = 'expected';
+        }
+
+        renderSimFrame(0);
+        switchTab('simulation');
+        toast(`Panic simulation complete: ${nFrames} snapshots recorded.`, 'ok');
+
+      } catch (err) {
+        hideOverlay();
+        setStatus('error', 'Network error.');
+        log('Network error: ' + err.message, 'err');
+        toast('Cannot reach server.', 'err');
+      }
+    }
+
+    // ─── Analyze ──────────────────────────────────────────────────────────────────
+    document.getElementById('btn-analyze').addEventListener('click', runAnalysis);
+
+    async function runAnalysis() {
+      const chain = document.getElementById('select-chain').value;
+      setStatus('running', 'Running analysis…');
+      showOverlay('Building Markov chain & solving fundamental matrix…');
+      log(`--- Analyze (${chain}) ---`, 'dim');
+
+      try {
+        const resp = await fetch(`${API_BASE}/api/analyze`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ grid, chain }),
+        });
+        const data = await resp.json();
+        hideOverlay();
+
+        if (!data.ok) {
+          setStatus('error', 'Analysis failed.');
+          log(`ERROR: ${data.error}`, 'err');
+          toast('Analysis failed: ' + data.error, 'err');
+          return;
+        }
+
+        lastAnalysis = data;
+        setStatus('online', `Analysis complete — ${data.chain} chain, ${data.n_transient} transient states.`);
+        log(`ok  n_transient=${data.n_transient}  n_absorbing=${data.n_absorbing}`, 'ok');
+        log(`    worst-case J = ${data.worst_case_time}  |  mean = ${data.mean_time}`, '');
+
+        // Update stat cards
+        document.getElementById('stat-worst').textContent = data.worst_case_time.toFixed(1);
+        document.getElementById('stat-mean').textContent = data.mean_time.toFixed(1);
+        document.getElementById('stat-transient').textContent = data.n_transient;
+        document.getElementById('stat-exits').textContent = data.n_absorbing;
+        document.getElementById('results-subtitle').textContent =
+          `${data.chain} chain · ${data.n_transient} states · J* = ${data.worst_case_time.toFixed(2)}`;
+
+        // Refresh heatmap if one is selected
+        if (heatmapMode !== 'none') applyHeatmap(heatmapMode);
+        toast(`Analysis done! J* = ${data.worst_case_time.toFixed(2)} steps.`, 'ok');
+        switchTab('overview');
+
+      } catch (err) {
+        hideOverlay();
+        setStatus('error', 'Network error — is the Flask server running?');
+        log('Network error: ' + err.message, 'err');
+        toast('Cannot reach server. Start app.py first.', 'err');
+      }
+    }
+
+    // ─── Monte Carlo ──────────────────────────────────────────────────────────────
+    async function runMonteCarlo(r, c) {
+      const chain = document.getElementById('select-chain').value;
+      const trials = parseInt(document.getElementById('input-trials').value) || 1000;
+      setStatus('running', `Monte Carlo from (${r},${c})…`);
+      log(`--- Monte Carlo (${r},${c}) T=${trials} chain=${chain} ---`, 'dim');
+      showOverlay(`Sampling ${trials} trajectories from (${r},${c})…`);
+
+      try {
+        const resp = await fetch(`${API_BASE}/api/monte_carlo`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ grid, start_row: r, start_col: c, trials, chain }),
+        });
+        const data = await resp.json();
+        hideOverlay();
+
+        if (!data.ok) {
+          setStatus('error', 'MC failed.');
+          log(`ERROR: ${data.error}`, 'err');
+          toast('Monte Carlo failed: ' + data.error, 'err');
+          return;
+        }
+
+        setStatus('online', `MC done: mean=${data.mean} ± ${data.std_error}`);
+        log(`ok  mc_mean=${data.mean}  std_err=${data.std_error}  analytic=${data.analytic_mean}`, 'ok');
+
+        const diff = Math.abs(data.mean - data.analytic_mean);
+        const relErr = data.analytic_mean > 0 ? (diff / data.analytic_mean * 100).toFixed(2) : 'N/A';
+
+        document.getElementById('mc-mean').textContent = data.mean;
+        document.getElementById('mc-stderr').textContent = data.std_error;
+        document.getElementById('mc-analytic').textContent = data.analytic_mean;
+        document.getElementById('mc-diff').textContent = `${diff.toFixed(4)} (${relErr}%)`;
+        document.getElementById('mc-trials').textContent = data.trials;
+        document.getElementById('mc-chain').textContent = data.chain;
+        document.getElementById('mc-cell').textContent = `(${r}, ${c})`;
+
+        // Color the diff value
+        const diffEl = document.getElementById('mc-diff');
+        const rel = parseFloat(relErr);
+        diffEl.className = 'rv ' + (rel < 1 ? 'good' : rel < 5 ? 'warn' : 'bad');
+
+        toast(`MC done: mean=${data.mean} vs analytic=${data.analytic_mean}`, 'ok');
+        switchTab('montecarlo');
+
+      } catch (err) {
+        hideOverlay();
+        setStatus('error', 'Network error.');
+        log('Network error: ' + err.message, 'err');
+        toast('Cannot reach server.', 'err');
+      }
+    }
+
+    // ─── Optimizer ────────────────────────────────────────────────────────────────
+    document.getElementById('btn-optimize').addEventListener('click', async () => {
+      const exitWidth = parseInt(document.getElementById('input-exit-width').value) || 2;
+
+      // Collect interior obstacle cells from the grid (non-boundary wall cells)
+      const obstacles = [];
+      for (let r = 1; r < rows - 1; r++) {
+        for (let c = 1; c < cols - 1; c++) {
+          if (grid[r][c] === CELL.WALL) obstacles.push([r, c]);
+        }
+      }
+
+      setStatus('running', 'Running BFGS exit optimizer…');
+      log(`--- Optimize (${rows}×${cols}, ew=${exitWidth}, obs=${obstacles.length}) ---`, 'dim');
+      showOverlay(`Optimizing exits via BFGS (4 walls)…\nThis may take 10–30 seconds.`);
+
+      try {
+        const resp = await fetch(`${API_BASE}/api/optimize`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rows, cols, exit_width: exitWidth, obstacles }),
+        });
+        const data = await resp.json();
+        hideOverlay();
+
+        if (!data.ok) {
+          setStatus('error', 'Optimizer failed.');
+          log(`ERROR: ${data.error}`, 'err');
+          toast('Optimizer failed: ' + data.error, 'err');
+          return;
+        }
+
+        setStatus('online', `Optimizer done: best ${data.best_wall} pos=${data.best_position} J=${data.best_J}`);
+        log(`ok  best=${data.best_wall} pos=${data.best_position} J=${data.best_J}`, 'ok');
+        for (const [w, wr] of Object.entries(data.wall_results)) {
+          log(`    ${w.padEnd(7)} pos=${wr.position}  J=${wr.J}  nit=${wr.nit}`, '');
+        }
+
+        document.getElementById('opt-best-wall').textContent = data.best_wall;
+        document.getElementById('opt-best-pos').textContent = data.best_position;
+        document.getElementById('opt-best-j').textContent = data.best_J;
+
+        // Fill table
+        const tbody = document.getElementById('opt-tbody');
+        tbody.innerHTML = '';
+        for (const [w, wr] of Object.entries(data.wall_results)) {
+          const tr = document.createElement('tr');
+          if (w === data.best_wall) tr.className = 'best-row';
+          tr.innerHTML = `<td>${w}</td><td>${wr.position}</td><td>${wr.J}</td><td>${wr.nit}</td><td>${wr.success ? '✓' : '✗'}</td>`;
+          tbody.appendChild(tr);
+        }
+
+        // Load optimal grid into editor
+        if (data.best_grid) {
+          grid = data.best_grid;
+          renderGrid();
+          if (heatmapMode !== 'none') lastAnalysis && applyHeatmap(heatmapMode);
+          toast(`Optimal exit loaded: ${data.best_wall} wall, pos ${data.best_position}, J=${data.best_J}`, 'ok');
+        }
+
+        switchTab('optimizer');
+
+      } catch (err) {
+        hideOverlay();
+        setStatus('error', 'Network error.');
+        log('Network error: ' + err.message, 'err');
+        toast('Cannot reach server.', 'err');
+      }
+    });
+
+    // ─── Tabs ─────────────────────────────────────────────────────────────────────
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+    });
+
+    // ─── Log clear ────────────────────────────────────────────────────────────────
+    document.getElementById('btn-clear-log').addEventListener('click', () => {
+      logBox.innerHTML = '';
+      log('Log cleared.', 'dim');
+    });
+
+    // ─── Keyboard shortcuts ───────────────────────────────────────────────────────
+    document.addEventListener('keydown', e => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+      const map = { 'w': 'wall', 'f': 'walkable', 'e': 'exit', 'x': 'erase' };
+      if (map[e.key]) {
+        activeTool = map[e.key];
+        document.querySelectorAll('.tool-btn').forEach(b => {
+          b.classList.toggle('active', b.dataset.tool === activeTool);
+        });
+      }
+      if (e.key === 'Enter') runAnalysis();
+      if ((e.ctrlKey || e.metaKey) && e.key === '+') { e.preventDefault(); setZoom(cellSize + 4); }
+      if ((e.ctrlKey || e.metaKey) && e.key === '-') { e.preventDefault(); setZoom(cellSize - 4); }
+    });
+
+    // ─── Init ─────────────────────────────────────────────────────────────────────
+    initGrid(20, 20);
+    loadTemplate(1);
+
+    // Ping server to show online status
+    fetch(`${API_BASE}/`).then(() => {
+      setStatus('online', 'Server connected — draw a floor plan and click Analyze.');
+      toast('Connected to TheSafeExit backend.', 'ok');
+    }).catch(() => {
+      setStatus('error', 'Cannot reach Flask server — run: python demo/web_editor/app.py');
+      toast('Backend not found. Start app.py first.', 'err');
+    });
+  </script>
+</body>
+
+</html>
