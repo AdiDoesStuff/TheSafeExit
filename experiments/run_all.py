@@ -172,7 +172,8 @@ def main(argv: List[str] | None = None) -> int:
     write_json(os.path.join(out_dir, "config.json"), cfg.to_dict())
     progress(f"environment: python {env.get('python_version', '').split()[0]}, "
              f"numpy {env.get('numpy_version')}, scipy {env.get('scipy_version')}, "
-             f"commit {env.get('git_commit')}, dirty={env.get('git_dirty')}")
+             f"commit {env.get('git_commit')}, dirty={env.get('git_dirty')}, "
+             f"untracked={len(env.get('git_untracked_files') or [])}")
 
     requested = [part.strip().upper() for part in args.only.split(",") if part.strip()]
     if requested:

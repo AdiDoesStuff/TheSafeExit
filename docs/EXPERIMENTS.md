@@ -23,7 +23,7 @@ Outputs are written to `experiments/out/`:
 
 | File | Content |
 |---|---|
-| `environment.json` | library versions, platform, CPU count, git commit, dirty flag, UTC timestamp |
+| `environment.json` | library versions, platform, CPU count, git commit, dirty flag (tracked changes), untracked-file list, UTC timestamp |
 | `config.json` | the full configuration, including seeds and run counts |
 | `results.csv` / `results.md` | status, time, key finding and artefact paths for E1–E7 |
 | `eN_config.json` | the pre-registered question, method, expectation and failure criterion |

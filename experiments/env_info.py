@@ -43,8 +43,22 @@ def write_environment_info(out_path: str = "experiments/out/environment.json") -
         info["git_commit"] = subprocess.check_output(
             ["git", "rev-parse", "HEAD"], text=True
         ).strip()
-        status = subprocess.check_output(["git", "status", "--porcelain"], text=True).strip()
-        info["git_dirty"] = bool(status)
+        # ``git_dirty`` means the tracked source differs from the recorded commit.
+        # Untracked files are reported separately: generated figures or personal
+        # notes should not make a clean checkout look modified, but they are still
+        # recorded so the environment is not overclaimed.
+        tracked = subprocess.check_output(
+            ["git", "status", "--porcelain", "--untracked-files=no"], text=True
+        ).strip()
+        info["git_dirty"] = bool(tracked)
+        everything = subprocess.check_output(
+            ["git", "status", "--porcelain", "--untracked-files=all"], text=True
+        ).strip()
+        info["git_untracked_files"] = [
+            line[3:].strip()
+            for line in everything.splitlines()
+            if line.startswith("??")
+        ]
     except Exception:
         pass
 
