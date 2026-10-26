@@ -50,3 +50,15 @@ def test_custom_initial_positions():
     # Check that initial coordinates match
     coords_set = {tuple(c) for c in active_coords}
     assert coords_set == set(custom_coords)
+
+
+def test_simulation_panic_disabled():
+    grid = get_simple_room(8, 8, exit_width=2)
+    sim = EvacuationSimulation(grid, n_agents=10, seed=42, panic_enabled=False)
+    assert not sim.panic_enabled
+
+    step_info = sim.step()
+    assert step_info["mean_panic"] == 0.0
+    assert step_info["mean_lambda"] == 0.0
+    assert sim.panic_field.total_panic() == 0.0
+
