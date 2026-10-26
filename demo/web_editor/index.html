@@ -405,6 +405,37 @@
       border-color: var(--teal);
     }
 
+    /* Checkbox rows (scenario controls) */
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11.5px;
+      color: var(--text-dim);
+      margin-bottom: 7px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .check-row input[type=checkbox] {
+      accent-color: var(--teal);
+      width: 14px;
+      height: 14px;
+      cursor: pointer;
+    }
+
+    input[type=range] {
+      width: 100%;
+      accent-color: var(--teal);
+      cursor: pointer;
+      margin: 2px 0 10px;
+    }
+
+    input[type=range]:disabled {
+      opacity: .35;
+      cursor: not-allowed;
+    }
+
     /* ─── Centre canvas area ────────────────────────────────────────────────── */
     .canvas-area {
       display: flex;
@@ -943,6 +974,26 @@
       </div>
 
       <div class="panel-section">
+        <div class="section-label">Scenario</div>
+        <div class="size-row" style="margin-bottom:2px">
+          <span class="size-label">Panic decay &gamma;</span>
+          <span id="sim-decay-val" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--teal)">0.00</span>
+        </div>
+        <input type="range" id="sim-decay" min="0" max="0.4" step="0.05" value="0">
+        <label class="check-row"><input type="checkbox" id="sim-capacity" checked> Cell &amp; exit capacity = 1</label>
+        <label class="check-row" style="margin-bottom:2px"><input type="checkbox" id="sim-traits"> Speed / reaction-time traits</label>
+        <div class="size-row" style="margin-bottom:2px">
+          <span class="size-label" style="padding-left:22px">Trait correlation &rho;</span>
+          <span id="sim-rho-val" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-dimmer)">+0.75</span>
+        </div>
+        <input type="range" id="sim-rho" min="-0.75" max="0.75" step="0.25" value="0.75" disabled>
+        <div style="font-size:11px;color:var(--text-dimmer);margin-bottom:10px;line-height:1.5">
+          Applied to <strong>Simulate Panic</strong> and <strong>Compare</strong>. Capacity blocks moves into full cells.
+        </div>
+        <button class="btn btn-violet" style="width:100%" id="btn-compare">⚖ Compare panic on / off</button>
+      </div>
+
+      <div class="panel-section">
         <div class="section-label">Panic Simulation (Dynamic Coupled)</div>
         <div class="size-row" style="margin-bottom:6px">
           <span class="size-label">Agents</span>
@@ -1063,6 +1114,17 @@
           </div>
         </div>
 
+        <div id="numerics-card" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:10px;margin-bottom:14px">
+          <div class="section-label" style="margin-bottom:6px">Numerical engine</div>
+          <div class="result-row"><span class="rk">Method</span><span class="rv" id="num-method">—</span></div>
+          <div class="result-row"><span class="rk">Relative residual</span><span class="rv" id="num-residual">—</span></div>
+          <div class="result-row"><span class="rk">Solve time</span><span class="rv" id="num-seconds">—</span></div>
+          <div class="result-row"><span class="rk">Unknowns (transient)</span><span class="rv" id="num-states">—</span></div>
+          <div style="font-size:10.5px;color:var(--text-dimmer);margin-top:6px;line-height:1.5">
+            One sparse solve of (I − Q)t = 1. The dense fundamental matrix is never formed.
+          </div>
+        </div>
+
         <div style="margin-bottom:8px">
           <div class="section-label" style="margin-bottom:6px">Heatmap legend</div>
           <div class="heatmap-legend">
@@ -1130,8 +1192,21 @@
           <div class="section-label" style="margin-bottom:6px">Simulation Summary</div>
           <div class="result-row"><span class="rk">Total steps</span><span class="rv" id="sim-sum-steps">—</span></div>
           <div class="result-row"><span class="rk">Evacuated</span><span class="rv" id="sim-sum-evac">—</span></div>
-          <div class="result-row"><span class="rk">Evacuation rate</span><span class="rv" id="sim-sum-rate">—</span></div>
+          <div class="result-row"><span class="rk">T50 / T90 / T100</span><span class="rv" id="sim-sum-quantiles">—</span></div>
           <div class="result-row"><span class="rk">Mean evac. time</span><span class="rv" id="sim-sum-mean">—</span></div>
+          <div class="result-row"><span class="rk">Blocked moves</span><span class="rv" id="sim-sum-blocked">—</span></div>
+          <div class="result-row"><span class="rk">Run time</span><span class="rv" id="sim-sum-seconds">—</span></div>
+        </div>
+
+        <div id="compare-card" style="display:none;margin-top:10px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:10px">
+          <div class="section-label" style="margin-bottom:6px">Ensemble — practice run strength</div>
+          <table class="opt-table" id="compare-table">
+            <thead>
+              <tr><th>Stat</th><th>panic off</th><th>panic on</th><th>Δ</th></tr>
+            </thead>
+            <tbody id="compare-tbody"></tbody>
+          </table>
+          <div id="compare-note" style="font-size:10.5px;color:var(--text-dimmer);margin-top:6px;line-height:1.5"></div>
         </div>
       </div>
 
@@ -1175,22 +1250,38 @@
       <!-- Optimizer tab -->
       <div class="tab-body" id="tab-optimizer">
         <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.6">
-          BFGS minimizes worst-case expected evacuation time J across all 4 walls.
+          Exhaustive search enumerates every legal boundary position and minimises the rational worst-case time J. BFGS is a heuristic on the same objective, shown for comparison.
         </div>
+
+        <div class="stat-grid" style="grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">
+          <div class="stat-card accent-teal" style="padding:8px 10px">
+            <div class="stat-label">Exhaustive</div>
+            <div class="stat-value" id="opt-exact-j" style="font-size:16px">—</div>
+            <div class="stat-unit" id="opt-exact-where">—</div>
+          </div>
+          <div class="stat-card accent-violet" style="padding:8px 10px">
+            <div class="stat-label">BFGS heuristic</div>
+            <div class="stat-value" id="opt-bfgs-j" style="font-size:16px">—</div>
+            <div class="stat-unit" id="opt-bfgs-where">—</div>
+          </div>
+        </div>
+
         <div id="opt-results">
           <div class="result-row">
-            <span class="rk">Best wall</span>
-            <span class="rv" id="opt-best-wall">—</span>
+            <span class="rk">Gap (BFGS − exhaustive)</span>
+            <span class="rv" id="opt-gap">—</span>
           </div>
           <div class="result-row">
-            <span class="rk">Best position</span>
-            <span class="rv" id="opt-best-pos">—</span>
+            <span class="rk">Legal positions enumerated</span>
+            <span class="rv" id="opt-candidates">—</span>
           </div>
           <div class="result-row">
-            <span class="rk">Best J</span>
-            <span class="rv" id="opt-best-j">—</span>
+            <span class="rk">Load into editor</span>
+            <span class="rv" id="opt-loaded">—</span>
           </div>
         </div>
+
+        <div class="section-label" style="margin:12px 0 4px">BFGS per wall</div>
         <table class="opt-table" id="opt-table">
           <thead>
             <tr>
@@ -1203,6 +1294,8 @@
           </thead>
           <tbody id="opt-tbody"></tbody>
         </table>
+
+        <div id="opt-notes" style="font-size:10.5px;color:var(--amber);margin-top:8px;line-height:1.5"></div>
       </div>
 
       <!-- Log tab -->
@@ -1298,6 +1391,68 @@
       document.querySelectorAll('.tab-body').forEach(b => b.classList.toggle('active', b.id === 'tab-' + name));
     }
 
+    function fmtResidual(v) {
+      const x = Number(v);
+      if (!isFinite(x)) return '—';
+      if (x === 0) return '0 (exact)';
+      if (x < 1e-15) return '< 1e-15';
+      return x.toExponential(2);
+    }
+
+    async function postJSON(path, body) {
+      const resp = await fetch(`${API_BASE}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      let data = null;
+      try { data = await resp.json(); } catch (_) { /* non-JSON error page */ }
+      if (!data) throw new Error(`Server returned ${resp.status} with no JSON body.`);
+      if (!data.ok) throw new Error(data.error || `Request failed (${resp.status}).`);
+      return data;
+    }
+
+    // ─── Scenario controls ───────────────────────────────────────────────────────
+    function readScenario() {
+      const capacity = document.getElementById('sim-capacity').checked;
+      const traits = document.getElementById('sim-traits').checked;
+      return {
+        panic_decay: parseFloat(document.getElementById('sim-decay').value) || 0,
+        cell_capacity: capacity ? 1 : null,
+        exit_capacity: capacity ? 1 : null,
+        traits: traits,
+        trait_rho: traits ? (parseFloat(document.getElementById('sim-rho').value) || 0) : 0,
+      };
+    }
+
+    function scenarioLabel(s) {
+      const parts = [];
+      parts.push(s.panic_decay > 0 ? `decay ${s.panic_decay.toFixed(2)}` : 'no decay');
+      parts.push(s.cell_capacity ? 'capacity 1' : 'no capacity');
+      if (s.traits) parts.push(`traits rho ${Number(s.trait_rho).toFixed(2)}`);
+      return parts.join(' · ');
+    }
+
+    (function initScenarioControls() {
+      const decayEl = document.getElementById('sim-decay');
+      const rhoEl = document.getElementById('sim-rho');
+      const traitsEl = document.getElementById('sim-traits');
+      const decayVal = document.getElementById('sim-decay-val');
+      const rhoVal = document.getElementById('sim-rho-val');
+
+      decayEl.addEventListener('input', () => {
+        decayVal.textContent = parseFloat(decayEl.value).toFixed(2);
+      });
+      rhoEl.addEventListener('input', () => {
+        const v = parseFloat(rhoEl.value);
+        rhoVal.textContent = (v >= 0 ? '+' : '') + v.toFixed(2);
+      });
+      traitsEl.addEventListener('change', () => {
+        rhoEl.disabled = !traitsEl.checked;
+        rhoVal.style.color = traitsEl.checked ? 'var(--teal)' : 'var(--text-dimmer)';
+      });
+    })();
+
     // ─── Grid init & render ───────────────────────────────────────────────────────
     function initGrid(r, c) {
       rows = r; cols = c;
@@ -1327,7 +1482,6 @@
         }
         gridEl.appendChild(tr);
       }
-      attachGridEvents();
     }
 
     function setCellValue(r, c, val) {
@@ -1374,25 +1528,9 @@
         if (!isPainting || !cell) return;
         paintCell(cell.r, cell.c);
       });
-
-      // Monte Carlo: click on walkable cell
-      gridEl.addEventListener('click', async e => {
-        if (activeTool !== 'erase' && !e.shiftKey) return;
-        const cell = cellFromEvent(e);
-        if (!cell) return;
-        if (grid[cell.r][cell.c] !== CELL.WALKABLE) {
-          toast('Click a white (walkable) floor cell for Monte Carlo.', 'warn');
-          return;
-        }
-        if (!lastAnalysis) {
-          toast('Run Analyze first, then shift-click a cell.', 'warn');
-          return;
-        }
-        await runMonteCarlo(cell.r, cell.c);
-      });
     }
 
-    // Shift-click handler on grid cells for MC sampling
+    // Shift-click on a walkable cell runs Monte Carlo from that cell.
     gridEl.addEventListener('click', async e => {
       if (!e.shiftKey) return;
       const cell = cellFromEvent(e);
@@ -1446,12 +1584,18 @@
       toast('Grid cleared.', 'ok');
     });
 
+    const TEMPLATE_NAMES = {
+      1: 'Simple room',
+      2: 'Two exits',
+      3: 'Room with pillar',
+      4: 'Room with barrier',
+    };
+    let templateCursor = 1;
+
     document.getElementById('btn-template').addEventListener('click', () => {
-      const choice = prompt(
-        'Load template:\n1 — Simple room (20×20)\n2 — Two exits (20×20)\n3 — Room with pillar (20×20)\n4 — Room with barrier (20×20)\n\nEnter 1–4:',
-        '1'
-      );
-      loadTemplate(parseInt(choice) || 1);
+      loadTemplate(templateCursor);
+      toast(`Template: ${TEMPLATE_NAMES[templateCursor]}`, 'ok');
+      templateCursor = templateCursor % 4 + 1;
     });
 
     function loadTemplate(n) {
@@ -1490,7 +1634,7 @@
       applyHeatmap(e.target.value);
     });
 
-    function applyHeatmap(mode) {
+    function applyHeatmap(mode, useAnalysis = false) {
       heatmapMode = mode;
       const tds = gridEl.querySelectorAll('td');
 
@@ -1505,8 +1649,8 @@
         return;
       }
 
-      // If viewing dynamic simulation results
-      if (lastSimulation && lastSimulation.frames && lastSimulation.frames.length && (mode === 'expected' || mode === 'panic')) {
+      // If viewing dynamic simulation results (unless the analysis just ran)
+      if (!useAnalysis && lastSimulation && lastSimulation.frames && lastSimulation.frames.length && (mode === 'expected' || mode === 'panic')) {
         applySimHeatmap(lastSimulation.frames[simCurrentFrame], mode);
         return;
       }
@@ -1818,34 +1962,25 @@
       const k = parseFloat(document.getElementById('sim-k').value) || 0.5;
       const maxSteps = parseInt(document.getElementById('sim-max-steps').value) || 60;
       const snapshotEvery = parseInt(document.getElementById('sim-snap-every').value) || 5;
+      const scenario = readScenario();
 
       setStatus('running', 'Simulating panic & solving dynamic fundamental matrices…');
       showOverlay(`Running panic diffusion PDE & dynamic matrix coupling…\n(${numAgents} agents, β=${beta}, D=${D}, k=${k})`);
       log(`--- Simulate Panic (${rows}×${cols}, N=${numAgents}, β=${beta}, D=${D}, k=${k}) ---`, 'dim');
+      log(`    scenario: ${scenarioLabel(scenario)}`, 'dim');
 
       try {
-        const resp = await fetch(`${API_BASE}/api/simulate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            grid,
-            num_agents: numAgents,
-            beta,
-            D,
-            k,
-            max_steps: maxSteps,
-            snapshot_every: snapshotEvery,
-          }),
+        const data = await postJSON('/api/simulate', {
+          grid,
+          num_agents: numAgents,
+          beta,
+          D,
+          k,
+          max_steps: maxSteps,
+          snapshot_every: snapshotEvery,
+          ...scenario,
         });
-        const data = await resp.json();
         hideOverlay();
-
-        if (!data.ok) {
-          setStatus('error', 'Simulation failed.');
-          log(`ERROR: ${data.error}`, 'err');
-          toast('Simulation failed: ' + data.error, 'err');
-          return;
-        }
 
         lastSimulation = data;
         stopSimPlayback();
@@ -1862,13 +1997,19 @@
         document.getElementById('btn-sim-next').disabled = false;
         document.getElementById('spark-j0').textContent = data.rational_J.toFixed(1);
 
-        // Fill summary card
         const sum = data.final_stats;
         if (sum) {
           document.getElementById('sim-sum-steps').textContent = sum.total_steps;
-          document.getElementById('sim-sum-evac').textContent = `${sum.evacuated_agents} / ${data.n_agents_start}`;
-          document.getElementById('sim-sum-rate').textContent = `${(sum.evacuation_rate * 100).toFixed(1)}%`;
-          document.getElementById('sim-sum-mean').textContent = sum.mean_evacuation_time ? `${sum.mean_evacuation_time.toFixed(1)} steps` : 'N/A';
+          document.getElementById('sim-sum-evac').textContent =
+            `${sum.evacuated_agents} / ${data.n_agents_start} (${(sum.evacuation_rate * 100).toFixed(0)}%)`;
+          const q = (v) => (v === null || v === undefined ? '—' : v.toFixed(0));
+          document.getElementById('sim-sum-quantiles').textContent =
+            `${q(sum.T50)} / ${q(sum.T90)} / ${q(sum.T100)}`;
+          document.getElementById('sim-sum-mean').textContent =
+            sum.mean_evacuation_time ? `${sum.mean_evacuation_time.toFixed(1)} steps` : 'N/A';
+          document.getElementById('sim-sum-blocked').textContent =
+            `${(sum.blocked_total || 0).toLocaleString()}`;
+          document.getElementById('sim-sum-seconds').textContent = `${sum.seconds} s`;
           document.getElementById('sim-final-card').style.display = 'block';
         }
 
@@ -1878,7 +2019,8 @@
 
         setStatus('online', `Simulation complete — J* ${data.rational_J.toFixed(1)} → peak ${jEnd.toFixed(1)} (+${growthPct}%).`);
         log(`ok  snapshots=${nFrames}  baseline_J*=${data.rational_J}  peak_J=${jEnd} (+${growthPct}%)`, 'ok');
-        log(`    evacuated=${sum?.evacuated_agents}/${data.n_agents_start} (${(sum?.evacuation_rate * 100).toFixed(1)}%) in ${sum?.total_steps} steps`, '');
+        log(`    evacuated=${sum?.evacuated_agents}/${data.n_agents_start} in ${sum?.total_steps} steps  T90=${sum?.T90}`, '');
+        if (sum?.blocked_total) log(`    blocked moves=${sum.blocked_total.toLocaleString()}`, '');
 
         // Set heatmap mode to expected if none
         if (heatmapMode === 'none') {
@@ -1892,9 +2034,9 @@
 
       } catch (err) {
         hideOverlay();
-        setStatus('error', 'Network error.');
-        log('Network error: ' + err.message, 'err');
-        toast('Cannot reach server.', 'err');
+        setStatus('error', 'Simulation failed.');
+        log(`ERROR: ${err.message}`, 'err');
+        toast('Simulation failed: ' + err.message, 'err');
       }
     }
 
@@ -1904,29 +2046,19 @@
     async function runAnalysis() {
       const chain = document.getElementById('select-chain').value;
       setStatus('running', 'Running analysis…');
-      showOverlay('Building Markov chain & solving fundamental matrix…');
+      showOverlay('Building Markov chain & solving (I − Q)t = 1…');
       log(`--- Analyze (${chain}) ---`, 'dim');
 
       try {
-        const resp = await fetch(`${API_BASE}/api/analyze`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ grid, chain }),
-        });
-        const data = await resp.json();
+        const data = await postJSON('/api/analyze', { grid, chain });
         hideOverlay();
 
-        if (!data.ok) {
-          setStatus('error', 'Analysis failed.');
-          log(`ERROR: ${data.error}`, 'err');
-          toast('Analysis failed: ' + data.error, 'err');
-          return;
-        }
-
         lastAnalysis = data;
+        const num = data.numerics || {};
         setStatus('online', `Analysis complete — ${data.chain} chain, ${data.n_transient} transient states.`);
         log(`ok  n_transient=${data.n_transient}  n_absorbing=${data.n_absorbing}`, 'ok');
         log(`    worst-case J = ${data.worst_case_time}  |  mean = ${data.mean_time}`, '');
+        log(`    ${num.method}  residual=${fmtResidual(num.residual)}  ${(num.seconds * 1000).toFixed(1)} ms`, 'ok');
 
         // Update stat cards
         document.getElementById('stat-worst').textContent = data.worst_case_time.toFixed(1);
@@ -1936,16 +2068,29 @@
         document.getElementById('results-subtitle').textContent =
           `${data.chain} chain · ${data.n_transient} states · J* = ${data.worst_case_time.toFixed(2)}`;
 
-        // Refresh heatmap if one is selected
-        if (heatmapMode !== 'none') applyHeatmap(heatmapMode);
-        toast(`Analysis done! J* = ${data.worst_case_time.toFixed(2)} steps.`, 'ok');
+        // Numerics readout
+        document.getElementById('numerics-card').style.display = 'block';
+        document.getElementById('num-method').textContent = num.method || '—';
+        const residualEl = document.getElementById('num-residual');
+        residualEl.textContent = fmtResidual(num.residual);
+        residualEl.className = 'rv ' + (num.residual < 1e-8 ? 'good' : 'bad');
+        document.getElementById('num-seconds').textContent = `${(num.seconds * 1000).toFixed(1)} ms`;
+        document.getElementById('num-states').textContent = num.n_states ?? data.n_transient;
+
+        // Refresh heatmap: analysis should be visible immediately after a run.
+        if (heatmapMode === 'none' || heatmapMode === 'panic') {
+          document.getElementById('select-heatmap').value = 'expected';
+          heatmapMode = 'expected';
+        }
+        applyHeatmap(heatmapMode, true);
+        toast(`Analysis done! J* = ${data.worst_case_time.toFixed(2)} steps, residual ${fmtResidual(num.residual)}.`, 'ok');
         switchTab('overview');
 
       } catch (err) {
         hideOverlay();
-        setStatus('error', 'Network error — is the Flask server running?');
-        log('Network error: ' + err.message, 'err');
-        toast('Cannot reach server. Start app.py first.', 'err');
+        setStatus('error', 'Analysis failed.');
+        log(`ERROR: ${err.message}`, 'err');
+        toast('Analysis failed: ' + err.message, 'err');
       }
     }
 
@@ -1958,48 +2103,40 @@
       showOverlay(`Sampling ${trials} trajectories from (${r},${c})…`);
 
       try {
-        const resp = await fetch(`${API_BASE}/api/monte_carlo`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ grid, start_row: r, start_col: c, trials, chain }),
+        const data = await postJSON('/api/monte_carlo', {
+          grid, start_row: r, start_col: c, trials, chain,
         });
-        const data = await resp.json();
         hideOverlay();
-
-        if (!data.ok) {
-          setStatus('error', 'MC failed.');
-          log(`ERROR: ${data.error}`, 'err');
-          toast('Monte Carlo failed: ' + data.error, 'err');
-          return;
-        }
 
         setStatus('online', `MC done: mean=${data.mean} ± ${data.std_error}`);
         log(`ok  mc_mean=${data.mean}  std_err=${data.std_error}  analytic=${data.analytic_mean}`, 'ok');
 
-        const diff = Math.abs(data.mean - data.analytic_mean);
-        const relErr = data.analytic_mean > 0 ? (diff / data.analytic_mean * 100).toFixed(2) : 'N/A';
+        const diff = data.difference;
+        const relPct = data.relative_error === null ? NaN : data.relative_error * 100;
 
         document.getElementById('mc-mean').textContent = data.mean;
         document.getElementById('mc-stderr').textContent = data.std_error;
         document.getElementById('mc-analytic').textContent = data.analytic_mean;
-        document.getElementById('mc-diff').textContent = `${diff.toFixed(4)} (${relErr}%)`;
+        document.getElementById('mc-diff').textContent =
+          `${diff >= 0 ? '+' : ''}${diff.toFixed(4)}` + (isNaN(relPct) ? '' : ` (${relPct.toFixed(2)}%)`);
         document.getElementById('mc-trials').textContent = data.trials;
         document.getElementById('mc-chain').textContent = data.chain;
         document.getElementById('mc-cell').textContent = `(${r}, ${c})`;
 
-        // Color the diff value
+        // The Monte Carlo error should sit inside a couple of standard errors.
         const diffEl = document.getElementById('mc-diff');
-        const rel = parseFloat(relErr);
-        diffEl.className = 'rv ' + (rel < 1 ? 'good' : rel < 5 ? 'warn' : 'bad');
+        const z = data.std_error > 0 ? Math.abs(diff) / data.std_error : 0;
+        diffEl.className = 'rv ' + (z < 2 ? 'good' : z < 4 ? 'warn' : 'bad');
+        log(`    |difference| / std_error = ${z.toFixed(2)}`, z < 2 ? 'ok' : 'warn');
 
-        toast(`MC done: mean=${data.mean} vs analytic=${data.analytic_mean}`, 'ok');
+        toast(`MC done: mean=${data.mean} vs exact=${data.analytic_mean}`, 'ok');
         switchTab('montecarlo');
 
       } catch (err) {
         hideOverlay();
-        setStatus('error', 'Network error.');
-        log('Network error: ' + err.message, 'err');
-        toast('Cannot reach server.', 'err');
+        setStatus('error', 'Monte Carlo failed.');
+        log(`ERROR: ${err.message}`, 'err');
+        toast('Monte Carlo failed: ' + err.message, 'err');
       }
     }
 
@@ -2015,63 +2152,158 @@
         }
       }
 
-      setStatus('running', 'Running BFGS exit optimizer…');
+      setStatus('running', 'Enumerating exit positions & running BFGS…');
       log(`--- Optimize (${rows}×${cols}, ew=${exitWidth}, obs=${obstacles.length}) ---`, 'dim');
-      showOverlay(`Optimizing exits via BFGS (4 walls)…\nThis may take 10–30 seconds.`);
+      showOverlay(`Enumerating legal exit positions, then BFGS…\nThis may take 5–20 seconds.`);
 
       try {
-        const resp = await fetch(`${API_BASE}/api/optimize`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ rows, cols, exit_width: exitWidth, obstacles }),
-        });
-        const data = await resp.json();
+        const data = await postJSON('/api/optimize', { rows, cols, exit_width: exitWidth, obstacles });
         hideOverlay();
 
-        if (!data.ok) {
-          setStatus('error', 'Optimizer failed.');
-          log(`ERROR: ${data.error}`, 'err');
-          toast('Optimizer failed: ' + data.error, 'err');
-          return;
+        const exact = data.exact;
+        const bfgs = data.heuristic;
+
+        document.getElementById('opt-exact-j').textContent = exact.score.toFixed(1);
+        document.getElementById('opt-exact-where').textContent =
+          `${exact.wall} wall · position ${exact.position}`;
+        document.getElementById('opt-candidates').textContent =
+          `${exact.n_candidates} · ${(exact.seconds * 1000).toFixed(0)} ms`;
+
+        if (bfgs) {
+          document.getElementById('opt-bfgs-j').textContent = bfgs.J.toFixed(1);
+          document.getElementById('opt-bfgs-where').textContent =
+            `${bfgs.wall} wall · position ${bfgs.position}`;
+          const gapEl = document.getElementById('opt-gap');
+          gapEl.textContent = data.gap_steps === 0
+            ? '0.0 steps — matched the optimum'
+            : `${data.gap_steps.toFixed(1)} steps`;
+          gapEl.className = 'rv ' + (data.gap_steps <= 0 ? 'good' : data.gap_steps < 2 ? 'warn' : 'bad');
+          log(`ok  exact=${exact.wall}/${exact.position} J=${exact.score}  |  ` +
+              `bfgs=${bfgs.wall}/${bfgs.position} J=${bfgs.J}  gap=${data.gap_steps}`, 'ok');
+        } else {
+          document.getElementById('opt-bfgs-j').textContent = 'n/a';
+          document.getElementById('opt-bfgs-where').textContent = 'skipped on this grid';
+          document.getElementById('opt-gap').textContent = 'not measured';
+          document.getElementById('opt-gap').className = 'rv warn';
+          log(`ok  exact=${exact.wall}/${exact.position} J=${exact.score}  (BFGS skipped)`, 'ok');
         }
 
-        setStatus('online', `Optimizer done: best ${data.best_wall} pos=${data.best_position} J=${data.best_J}`);
-        log(`ok  best=${data.best_wall} pos=${data.best_position} J=${data.best_J}`, 'ok');
-        for (const [w, wr] of Object.entries(data.wall_results)) {
-          log(`    ${w.padEnd(7)} pos=${wr.position}  J=${wr.J}  nit=${wr.nit}`, '');
-        }
-
-        document.getElementById('opt-best-wall').textContent = data.best_wall;
-        document.getElementById('opt-best-pos').textContent = data.best_position;
-        document.getElementById('opt-best-j').textContent = data.best_J;
-
-        // Fill table
+        // Per-wall BFGS table
         const tbody = document.getElementById('opt-tbody');
         tbody.innerHTML = '';
-        for (const [w, wr] of Object.entries(data.wall_results)) {
-          const tr = document.createElement('tr');
-          if (w === data.best_wall) tr.className = 'best-row';
-          tr.innerHTML = `<td>${w}</td><td>${wr.position}</td><td>${wr.J}</td><td>${wr.nit}</td><td>${wr.success ? '✓' : '✗'}</td>`;
-          tbody.appendChild(tr);
+        if (data.wall_results) {
+          for (const [w, wr] of Object.entries(data.wall_results)) {
+            const tr = document.createElement('tr');
+            if (w === data.best_wall) tr.className = 'best-row';
+            tr.innerHTML = `<td>${w}</td><td>${wr.position}</td><td>${wr.J}</td><td>${wr.nit}</td><td>${wr.success ? '✓' : '✗'}</td>`;
+            tbody.appendChild(tr);
+          }
         }
 
-        // Load optimal grid into editor
-        if (data.best_grid) {
-          grid = data.best_grid;
+        // Notes (e.g. BFGS skipped)
+        const notesEl = document.getElementById('opt-notes');
+        notesEl.textContent = (data.notes || []).join(' ');
+
+        // Load the guaranteed optimum into the editor.
+        if (data.exact_grid) {
+          grid = data.exact_grid;
           renderGrid();
-          if (heatmapMode !== 'none') lastAnalysis && applyHeatmap(heatmapMode);
-          toast(`Optimal exit loaded: ${data.best_wall} wall, pos ${data.best_position}, J=${data.best_J}`, 'ok');
+          document.getElementById('opt-loaded').textContent =
+            `exhaustive optimum (${exact.wall} ${exact.position})`;
+          if (heatmapMode !== 'none') applyHeatmap(heatmapMode);
+          toast(`Optimal exit loaded: ${exact.wall} wall, position ${exact.position}, J=${exact.score}`, 'ok');
         }
 
+        setStatus('online', `Optimizer done — exhaustive J=${exact.score}${bfgs ? `, BFGS J=${bfgs.J}` : ''}.`);
         switchTab('optimizer');
 
       } catch (err) {
         hideOverlay();
-        setStatus('error', 'Network error.');
-        log('Network error: ' + err.message, 'err');
-        toast('Cannot reach server.', 'err');
+        setStatus('error', 'Optimizer failed.');
+        log(`ERROR: ${err.message}`, 'err');
+        toast('Optimizer failed: ' + err.message, 'err');
       }
     });
+
+    // ─── Ensemble comparison (panic off vs on) ────────────────────────────────────
+    document.getElementById('btn-compare').addEventListener('click', runCompare);
+
+    async function runCompare() {
+      const nRuns = 20;
+      const nAgents = parseInt(document.getElementById('sim-agents').value) || 30;
+      const scenario = readScenario();
+      const seed = 1000;
+      const base = {
+        grid,
+        n_runs: nRuns,
+        n_agents: nAgents,
+        seed,
+        max_steps: 900,
+        ...scenario,
+      };
+
+      setStatus('running', `Running ${nRuns} seeded simulations twice (panic off / on)…`);
+      showOverlay(`Running ${nRuns} common-seed simulations with panic off, then on…\nThis takes a few seconds.`);
+      log(`--- Compare (${nRuns} runs × 2, ${nAgents} agents, ${scenarioLabel(scenario)}) ---`, 'dim');
+
+      try {
+        const [off, on] = await Promise.all([
+          postJSON('/api/ensemble', { ...base, panic_on: false }),
+          postJSON('/api/ensemble', { ...base, panic_on: true }),
+        ]);
+        hideOverlay();
+
+        const rows = ['T50', 'T90', 'T100'];
+        const tbody = document.getElementById('compare-tbody');
+        tbody.innerHTML = '';
+
+        for (const key of rows) {
+          const a = off.stats[key];
+          const b = on.stats[key];
+          const fmt = (s) => (s.median === null ? 'censored' :
+            `${s.median.toFixed(0)} <span style="color:var(--text-dimmer);font-size:10px">[${s.lo.toFixed(0)}, ${s.hi.toFixed(0)}]</span>`);
+          let delta = '—';
+          if (a.median !== null && b.median !== null) {
+            const d = b.median - a.median;
+            const pct = a.median > 0 ? (d / a.median * 100) : 0;
+            delta = `${d >= 0 ? '+' : ''}${d.toFixed(0)} (${d >= 0 ? '+' : ''}${pct.toFixed(0)}%)`;
+          }
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${key}</td><td>${fmt(a)}</td><td>${fmt(b)}</td><td style="color:${b.median !== null && a.median !== null && b.median > a.median ? 'var(--coral)' : 'var(--teal)'}">${delta}</td>`;
+          tbody.appendChild(tr);
+        }
+
+        const trB = document.createElement('tr');
+        trB.innerHTML = `<td>blocked</td><td>${off.blocked_total.toLocaleString()}</td>` +
+          `<td>${on.blocked_total.toLocaleString()}</td><td>—</td>`;
+        tbody.appendChild(trB);
+
+        const trF = document.createElement('tr');
+        trF.innerHTML = `<td>finished</td><td>${(off.fraction_finished * 100).toFixed(0)}%</td>` +
+          `<td>${(on.fraction_finished * 100).toFixed(0)}%</td><td>—</td>`;
+        tbody.appendChild(trF);
+
+        document.getElementById('compare-note').textContent =
+          `${nRuns} common seeds (${seed}–${seed + nRuns - 1}), ${nAgents} agents, ` +
+          `${scenarioLabel(scenario)}. Median with 95% bootstrap interval in brackets. ` +
+          `Runtime ${off.seconds}s + ${on.seconds}s.`;
+
+        document.getElementById('compare-card').style.display = 'block';
+        switchTab('simulation');
+
+        const d90 = (on.stats.T90.median ?? 0) - (off.stats.T90.median ?? 0);
+        setStatus('online', `Ensemble done — T90 ${off.stats.T90.median?.toFixed(0) ?? '—'} (off) → ${on.stats.T90.median?.toFixed(0) ?? '—'} (on), Δ ${d90 >= 0 ? '+' : ''}${d90.toFixed(0)} steps.`);
+        log(`ok  T90 off=${off.stats.T90.median} on=${on.stats.T90.median}  delta=${d90}`, 'ok');
+        log(`    blocked off=${off.blocked_total} on=${on.blocked_total}`, '');
+        toast(`Ensemble done: T90 Δ ${d90 >= 0 ? '+' : ''}${d90.toFixed(0)} steps.`, 'ok');
+
+      } catch (err) {
+        hideOverlay();
+        setStatus('error', 'Compare failed.');
+        log(`ERROR: ${err.message}`, 'err');
+        toast('Compare failed: ' + err.message, 'err');
+      }
+    }
 
     // ─── Tabs ─────────────────────────────────────────────────────────────────────
     document.querySelectorAll('.tab').forEach(tab => {
@@ -2102,15 +2334,20 @@
     // ─── Init ─────────────────────────────────────────────────────────────────────
     initGrid(20, 20);
     loadTemplate(1);
+    templateCursor = 2;   // the simple room is already loaded
+    attachGridEvents();
 
-    // Ping server to show online status
-    fetch(`${API_BASE}/`).then(() => {
-      setStatus('online', 'Server connected — draw a floor plan and click Analyze.');
-      toast('Connected to TheSafeExit backend.', 'ok');
-    }).catch(() => {
-      setStatus('error', 'Cannot reach Flask server — run: python demo/web_editor/app.py');
-      toast('Backend not found. Start app.py first.', 'err');
-    });
+    // Ping the server to show online status
+    fetch(`${API_BASE}/api/health`)
+      .then(r => r.json())
+      .then(info => {
+        setStatus('online', `Server connected (v${info.version}) — draw a floor plan and click Analyze.`);
+        toast('Connected to TheSafeExit backend.', 'ok');
+      })
+      .catch(() => {
+        setStatus('error', 'Cannot reach Flask server — run demo\\run_demo.bat');
+        toast('Backend not found. Start the editor first.', 'err');
+      });
   </script>
 </body>
 
