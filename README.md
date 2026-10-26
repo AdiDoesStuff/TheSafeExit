@@ -266,7 +266,8 @@ python experiments/run_all.py --dry-run    # environment and plan only
 
 The quick configuration is for smoke tests only; its small run counts give wide
 intervals. `docs/EXPERIMENTS.md` describes each experiment and how to read its
-outputs. Every result is uncalibrated and is meant for comparing designs.
+outputs; `docs/RESULTS.md` summarises the last full run with its environment and
+caveats. Every result is uncalibrated and is meant for comparing designs.
 
 ## Heatmap Snapshots
 

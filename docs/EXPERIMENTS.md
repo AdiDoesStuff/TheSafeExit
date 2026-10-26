@@ -3,7 +3,8 @@
 This document describes what each experiment asks, how it is run, and how to read
 its outputs. It is the companion to `experiments/out/results.md`, which records
 the actual results of the last run together with `environment.json` (Python,
-NumPy, SciPy, Matplotlib versions and git commit).
+NumPy, SciPy, Matplotlib versions and git commit). `docs/RESULTS.md` summarises
+that run in the repository, including the numbers quoted in the report.
 
 Every experiment states a question, a method, an expectation and a failure
 criterion before it runs. Failure criteria are evaluated in code; a failed
