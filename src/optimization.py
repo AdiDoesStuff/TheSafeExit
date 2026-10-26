@@ -1,24 +1,35 @@
 """
-optimization.py — Phase 5: Gradient-Based Exit Placement Optimization (CO2)
+optimization.py — Exit placement: exhaustive search and a heuristic baseline.
 
-Provides deterministic, closed-form exit placement optimization based on
-minimizing worst-case expected evacuation time over floor-plan boundary walls.
+Two objectives are used here:
+
+* ``rational_max_distance`` — the maximum BFS distance from a walkable cell to
+  the nearest exit. For the rational (steepest-descent) chain this equals the
+  worst-case expected absorption time exactly, and it is cheap to evaluate.
+* ensemble T90 — a stochastic check of a shortlisted design.
+
+The exhaustive search in :func:`exact_exit_search` enumerates every legal
+boundary position and is therefore guaranteed optimal for the chosen discrete
+objective on the enumerated set. :func:`optimize_exit_placement` (BFGS over a
+rounded interpolation) is retained as a *heuristic search* baseline so E5 can
+report where it misses the true optimum.
 """
 
 from __future__ import annotations
 
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Any, Dict, List, Optional, Sequence, Tuple
+
 import numpy as np
-from scipy.optimize import minimize, approx_fprime
+from scipy.optimize import minimize
 
 from src.floor_plan import (
-    CELL_WALL,
-    CELL_WALKABLE,
     CELL_EXIT,
-    validate_reachability,
+    CELL_WALKABLE,
+    CELL_WALL,
     compute_exit_distance_field,
+    validate_reachability,
 )
-from src.markov import build_state_map, build_rational_QR
+from src.markov import build_rational_QR, build_state_map
 from src.solvers import fundamental_matrix_lu
 
 
@@ -97,21 +108,35 @@ def build_grid_with_exit_on_wall(
     return grid
 
 
+def rational_max_distance(grid: np.ndarray) -> float:
+    """
+    Worst-case BFS distance from a walkable cell to the nearest exit.
+
+    For the rational (steepest-descent) chain, every step reduces the BFS
+    distance by exactly one, so the absorption time is deterministic and equals
+    this distance. This is the cheap objective used to enumerate exit positions.
+    """
+    validate_reachability(grid)
+    dist_field = compute_exit_distance_field(grid)
+    walkable = grid == CELL_WALKABLE
+    if not np.any(walkable):
+        raise ValueError("Floor plan has no walkable cells.")
+    return float(np.max(dist_field[walkable]))
+
+
 def worst_case_evacuation_time(grid: np.ndarray) -> float:
     """
-    Computes the exact closed-form worst-case expected evacuation time across all
-    walkable cells on the floor plan under rational gradient descent.
+    Exact worst-case expected evacuation time under rational gradient descent.
 
-    Since Phase 4 proved that rational steepest descent has zero variance in absorption time
-    (step count is deterministic and equals geodesic distance), this evaluates the closed-form
-    spectral objective:
-        J = max_i ( (I - Q_rational)^(-1) 1 )_i
+    Since rational steepest descent has zero variance in absorption time (the
+    step count is deterministic and equals geodesic distance), this evaluates
+    the spectral objective
 
-    Parameters:
-        grid: 2D numpy array representing the floor plan.
+        J = max_i ((I - Q_rational)^(-1) 1)_i
 
-    Returns:
-        J: Maximum expected steps to evacuation from any walkable starting cell.
+    and is retained as the reference check for :func:`rational_max_distance`.
+    It forms a dense fundamental matrix and is therefore only appropriate for
+    small grids.
     """
     validate_reachability(grid)
     dist_field = compute_exit_distance_field(grid)
@@ -135,8 +160,14 @@ def optimize_exit_placement(
     obstacles: Optional[Sequence[Tuple[int, int]]] = None,
 ) -> Dict[str, Any]:
     """
-    Optimizes exit placement along room boundary walls using BFGS gradient descent
-    with numerical finite-difference gradient estimation.
+    Heuristic exit search: BFGS over a rounded continuous interpolation.
+
+    This is *not* guaranteed to find the optimum. The decision variable is a
+    small discrete set of legal wall positions, so the exact objective is
+    piecewise constant; BFGS treats a linear interpolation of that objective
+    as smooth and can stop at a local plateau. It is kept as the comparison
+    baseline for E5; use :func:`exact_exit_search` for a guaranteed optimum
+    over the enumerated positions.
 
     Parameters:
         rows, cols: Dimensions of the room.
@@ -278,4 +309,222 @@ def optimize_exit_placement(
         "raw_best_J": raw_best_J,
         "best_grid": best_grid,
         "walls": wall_results,
+    }
+
+
+# Backwards-compatible explicit name for the heuristic.
+heuristic_exit_search = optimize_exit_placement
+
+
+# --------------------------------------------------------------------------- #
+# 2.4 Exact exit search
+# --------------------------------------------------------------------------- #
+_DEFAULT_WALL_ORDER = ("top", "bottom", "left", "right")
+
+
+def enumerate_exit_positions(
+    rows: int = 20,
+    cols: int = 20,
+    exit_width: int = 2,
+    obstacles: Optional[Sequence[Tuple[int, int]]] = None,
+    walls: Sequence[str] = _DEFAULT_WALL_ORDER,
+) -> List[Dict[str, Any]]:
+    """
+    Enumerate every legal exit position on the requested boundary walls.
+
+    A position is legal when the opening lies strictly between the corner
+    cells, and the resulting grid has no unreachable walkable cell. Each
+    candidate is scored by :func:`rational_max_distance`.
+
+    The returned list is ordered deterministically: by score, then wall order,
+    then position.
+    """
+    candidates: List[Dict[str, Any]] = []
+    wall_order = [str(w).strip().lower() for w in walls]
+    for wall in wall_order:
+        if wall not in _DEFAULT_WALL_ORDER:
+            raise ValueError(f"Invalid wall '{wall}'.")
+        interior_len = (cols - 2) if wall in {"top", "bottom"} else (rows - 2)
+        if exit_width < 1 or exit_width > interior_len:
+            raise ValueError(
+                f"exit_width {exit_width} must be between 1 and interior wall "
+                f"length {interior_len}."
+            )
+        max_pos = interior_len - exit_width
+        for position in range(max_pos + 1):
+            grid = build_grid_with_exit_on_wall(
+                wall=wall,
+                position=position,
+                rows=rows,
+                cols=cols,
+                exit_width=exit_width,
+                obstacles=obstacles,
+            )
+            try:
+                validate_reachability(grid)
+            except ValueError:
+                # An obstacle can isolate the opening; such a position is not
+                # a legal design and is simply omitted.
+                continue
+            candidates.append(
+                {
+                    "wall": wall,
+                    "position": int(position),
+                    "grid": grid,
+                    "max_distance": rational_max_distance(grid),
+                }
+            )
+
+    if not candidates:
+        raise ValueError("No legal exit positions exist for this layout.")
+
+    order = {wall: i for i, wall in enumerate(_DEFAULT_WALL_ORDER)}
+    candidates.sort(
+        key=lambda c: (c["max_distance"], order[c["wall"]], c["position"])
+    )
+    return candidates
+
+
+def _candidate_public(candidate: Dict[str, Any]) -> Dict[str, Any]:
+    out = {
+        "wall": candidate["wall"],
+        "position": int(candidate["position"]),
+        "max_distance": float(candidate["max_distance"]),
+    }
+    if "grid" in candidate:
+        out["grid"] = candidate["grid"]
+    if "ensemble" in candidate:
+        out["ensemble"] = candidate["ensemble"]
+    if "ensemble_rank" in candidate:
+        out["ensemble_rank"] = int(candidate["ensemble_rank"])
+    return out
+
+
+def exact_exit_search(
+    rows: int = 20,
+    cols: int = 20,
+    exit_width: int = 2,
+    obstacles: Optional[Sequence[Tuple[int, int]]] = None,
+    walls: Sequence[str] = _DEFAULT_WALL_ORDER,
+    *,
+    ensemble_top_k: int = 5,
+    n_runs: int = 100,
+    base_seed: int = 0,
+    seeds: Optional[Sequence[int]] = None,
+    max_steps: int = 600,
+    sim_kwargs: Optional[Dict[str, Any]] = None,
+    progress: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """
+    Exhaustive exit placement search with an optional ensemble re-score.
+
+    Stage 1 enumerates every legal boundary position and scores it by the
+    rational worst-case BFS distance. The first candidate is therefore the true
+    minimum of that objective on the enumerated set.
+
+    Stage 2 re-scores the best ``ensemble_top_k`` candidates by the median T90
+    of an ensemble with common random numbers (the same seeds for every
+    candidate). ``best_by_ensemble`` is the winner of that second stage; it can
+    differ from ``best`` because the ensemble includes panic, capacity and
+    stochastic effects that the rational objective ignores.
+
+    Parameters
+    ----------
+    walls:
+        Boundary walls to search. Defaults to all four.
+    ensemble_top_k:
+        Number of stage-1 finalists to re-score. Set to 0 to skip stage 2.
+    seeds:
+        Explicit seeds. Defaults to ``range(base_seed, base_seed + n_runs)``.
+    sim_kwargs:
+        Extra ``EvacuationSimulation`` kwargs for stage 2 (for example
+        ``{"panic_enabled": False, "cell_capacity": 1, "n_agents": 40}``).
+    """
+    if ensemble_top_k < 0:
+        raise ValueError("ensemble_top_k must be non-negative.")
+    if n_runs <= 0:
+        raise ValueError("n_runs must be positive.")
+
+    candidates = enumerate_exit_positions(
+        rows=rows,
+        cols=cols,
+        exit_width=exit_width,
+        obstacles=obstacles,
+        walls=walls,
+    )
+    best = candidates[0]
+    objective_value = float(best["max_distance"])
+
+    n_finalists = min(int(ensemble_top_k), len(candidates))
+    finalists = candidates[:n_finalists]
+    if seeds is None:
+        seeds = list(range(int(base_seed), int(base_seed) + int(n_runs)))
+    seeds = [int(s) for s in seeds]
+    if len(seeds) != int(n_runs):
+        raise ValueError("len(seeds) must equal n_runs")
+
+    best_by_ensemble: Optional[Dict[str, Any]] = None
+    if finalists:
+        from src.ensemble import run_ensemble
+
+        kwargs = dict(sim_kwargs or {})
+        for candidate in finalists:
+            result = run_ensemble(
+                candidate["grid"],
+                n_runs=int(n_runs),
+                base_seed=int(base_seed),
+                seeds=seeds,
+                max_steps=int(max_steps),
+                **kwargs,
+            )
+            summary = result.summary()
+            t90 = summary["T90"]
+            candidate["ensemble"] = {
+                "T90_median": t90["median"],
+                "T90_bootstrap_ci": t90["bootstrap_ci"],
+                "T100_median": summary["T100"]["median"],
+                "fraction_finished": summary["fraction_finished"],
+                "fraction_evacuated_mean": summary["fraction_evacuated_mean"],
+                "n_runs": int(n_runs),
+                "base_seed": int(base_seed),
+            }
+            if progress is not None:
+                progress(candidate)
+
+        # Rank by T90 (NaN last), then by stage-1 score for a stable tie-break.
+        scored = sorted(
+            finalists,
+            key=lambda c: (
+                np.isnan(c["ensemble"]["T90_median"]),
+                c["ensemble"]["T90_median"]
+                if not np.isnan(c["ensemble"]["T90_median"])
+                else float("inf"),
+                c["max_distance"],
+                c["wall"],
+                c["position"],
+            ),
+        )
+        for rank, candidate in enumerate(scored, start=1):
+            candidate["ensemble_rank"] = rank
+        best_by_ensemble = scored[0]
+
+    return {
+        "objective": "min_max_rational_bfs_distance",
+        "rows": int(rows),
+        "cols": int(cols),
+        "exit_width": int(exit_width),
+        "obstacles": list(obstacles) if obstacles is not None else None,
+        "n_candidates": len(candidates),
+        "candidates": [_candidate_public(c) for c in candidates],
+        "best": _candidate_public(best),
+        "best_score": objective_value,
+        "optimal_for_objective": True,
+        "best_by_ensemble": _candidate_public(best_by_ensemble)
+        if best_by_ensemble is not None
+        else None,
+        "ensemble_top_k": int(ensemble_top_k),
+        "n_runs": int(n_runs) if finalists else 0,
+        "base_seed": int(base_seed),
+        "max_steps": int(max_steps),
+        "sim_kwargs": dict(sim_kwargs or {}),
     }
