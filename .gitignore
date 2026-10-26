@@ -13,7 +13,10 @@ build/
 
 # Test artifacts
 .pytest_cache/
+.pytest_tmp/
 
+# Experiment output
+experiments/out/
 # IDE / editor folders
 .idea/
 .vscode/
