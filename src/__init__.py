@@ -14,6 +14,7 @@ from src.floor_plan import (
 from src.markov import build_state_map, build_QR, build_uniform_QR, build_rational_QR, build_mixed_QR
 from src.panic import PanicField, UnstableTimestepError, compute_agent_density
 from src.simulation import EvacuationSimulation
+from src.heatmap import time_to_exit_map, expected_visits_map, blocked_moves_map
 from src.heatmap_sequence import (
     global_colorscale,
     plot_heatmap_grid,
@@ -68,6 +69,9 @@ __all__ = [
     "build_grid_with_exit_on_wall",
     "worst_case_evacuation_time",
     "optimize_exit_placement",
+    "time_to_exit_map",
+    "expected_visits_map",
+    "blocked_moves_map",
     "run_ensemble",
     "EnsembleResult",
     "paired_difference",

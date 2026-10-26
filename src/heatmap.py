@@ -5,20 +5,30 @@ from typing import Dict, Tuple, Optional
 from src.floor_plan import CELL_WALL, CELL_WALKABLE, CELL_EXIT
 
 
-def fundamental_to_heatmap(N: np.ndarray, 
-                           grid: np.ndarray, 
-                           state_map: Dict[Tuple[int, int], int], 
+def fundamental_to_heatmap(N: np.ndarray,
+                           grid: np.ndarray,
+                           state_map: Dict[Tuple[int, int], int],
                            n_transient: int) -> np.ndarray:
     """
     Maps the fundamental matrix N = (I - Q)^(-1) row sums back to a 2D floor plan grid.
-    
-    Each row sum sum_j N_ij gives the expected total time steps spent in the building 
+
+    Each row sum sum_j N_ij gives the expected total time steps spent in the building
     starting from transient cell i before reaching an exit.
-    
+
     Returns:
         heatmap_grid: 2D float array matching grid shape. Walkable cells contain expected
                       evacuation times, wall cells are NaN, exit cells are 0.0.
     """
+    return time_to_exit_map(N, state_map, grid)
+
+
+def time_to_exit_map(N: np.ndarray,
+                     state_map: Dict[Tuple[int, int], int],
+                     grid: np.ndarray) -> np.ndarray:
+    """
+    Row-sum map: expected time to exit (steps) from each cell.
+    """
+    n_transient = int(np.sum(grid == CELL_WALKABLE))
     row_sums = np.sum(N, axis=1)
     heatmap = np.full(grid.shape, np.nan, dtype=np.float64)
 
@@ -29,6 +39,35 @@ def fundamental_to_heatmap(N: np.ndarray,
             heatmap[r, c] = 0.0
 
     return heatmap
+
+
+def expected_visits_map(N: np.ndarray,
+                        s0=None,
+                        state_map: Dict[Tuple[int, int], int] = None,
+                        grid: np.ndarray = None) -> np.ndarray:
+    """
+    Returns s0 @ N placed on the grid (walls NaN, exits 0). s0 defaults to uniform
+    over transient states.
+    """
+    n_transient = int(np.sum(grid == CELL_WALKABLE))
+    if s0 is None:
+        s0 = np.ones(n_transient, dtype=float) / n_transient
+    s0 = np.asarray(s0, dtype=float).reshape(-1)
+    visits = s0 @ N  # shape (n_transient,)
+    heatmap = np.full(grid.shape, np.nan, dtype=np.float64)
+    for (r, c), idx in state_map.items():
+        if idx < n_transient:
+            heatmap[r, c] = visits[idx]
+        elif grid[r, c] == CELL_EXIT:
+            heatmap[r, c] = 0.0
+    return heatmap
+
+
+def blocked_moves_map(blocked_counts: np.ndarray,
+                      grid: np.ndarray) -> np.ndarray:
+    out = np.asarray(blocked_counts, dtype=float).copy()
+    out[grid == CELL_WALL] = np.nan
+    return out
 
 
 def plot_heatmap(heatmap: np.ndarray, 
@@ -83,7 +122,7 @@ def plot_heatmap(heatmap: np.ndarray,
 
     # Colorbar
     cbar = fig.colorbar(im, ax=ax, shrink=0.8)
-    cbar.set_label("Expected Evacuation Time Steps", fontsize=10, fontweight='bold')
+    cbar.set_label("Expected time to exit (steps)", fontsize=10, fontweight='bold')
 
     if save_path:
         fig.savefig(save_path, dpi=300, bbox_inches='tight')
