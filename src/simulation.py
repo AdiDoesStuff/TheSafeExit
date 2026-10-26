@@ -58,9 +58,12 @@ class EvacuationSimulation:
         exit_capacity: Optional[int] = None,
         use_traits: bool = False,
         traits: Optional[Tuple] = None,
+        trait_mu: Optional[np.ndarray] = None,
+        trait_sigma: Optional[np.ndarray] = None,
         cell_size_m: float = 0.5,
         step_s: float = 0.4,
         max_moves_per_step: int = 2,
+        panic_dt: Optional[float] = None,
         check_invariants: bool = False,
     ):
         floor_plan_arr = np.asarray(floor_plan)
@@ -100,6 +103,20 @@ class EvacuationSimulation:
             raise ValueError("max_moves_per_step must be a positive integer")
         self.use_traits = bool(use_traits)
         self.traits = traits
+        self.trait_mu = (
+            None if trait_mu is None else np.asarray(trait_mu, dtype=float).reshape(-1)
+        )
+        self.trait_sigma = (
+            None if trait_sigma is None else np.asarray(trait_sigma, dtype=float)
+        )
+        if self.trait_mu is not None and self.trait_mu.shape != (2,):
+            raise ValueError("trait_mu must have shape (2,)")
+        if self.trait_sigma is not None and self.trait_sigma.shape != (2, 2):
+            raise ValueError("trait_sigma must have shape (2, 2)")
+        if panic_dt is not None:
+            if not np.isfinite(panic_dt) or panic_dt <= 0:
+                raise ValueError("panic_dt must be positive and finite")
+        self.panic_dt = panic_dt
         self.check_invariants = bool(check_invariants)
         self.cell_size_m = float(cell_size_m)
         self.step_s = float(step_s)
@@ -132,7 +149,13 @@ class EvacuationSimulation:
         )
 
         # 3. Engine C: Panic Contagion Field
-        self.panic_field = PanicField(self.floor_plan, D=self.D, k=self.k, decay=self.panic_decay)
+        self.panic_field = PanicField(
+            self.floor_plan,
+            D=self.D,
+            k=self.k,
+            decay=self.panic_decay,
+            dt=self.panic_dt,
+        )
 
         # 4. Agent Initialization
         self.agent_states = np.zeros(self.n_agents, dtype=int)  # 0..n_transient-1, or -1 when absorbed
@@ -169,6 +192,7 @@ class EvacuationSimulation:
         self.reactions = np.zeros(self.n_agents, dtype=float)
         self.delay_steps = np.zeros(self.n_agents, dtype=int)
         self.budget = np.zeros(self.n_agents, dtype=float)
+        self.truncated_traits = 0
         if self.use_traits:
             if self.traits is not None:
                 sp_arr = np.asarray(self.traits[0], dtype=float).reshape(-1)
@@ -178,11 +202,22 @@ class EvacuationSimulation:
                 self.speeds = sp_arr.copy()
                 self.reactions = rt_arr.copy()
             else:
-                from src.gaussian_sampler import sample_agents
+                from src.gaussian_sampler import (
+                    MU_DEFAULT,
+                    SIGMA_DEFAULT,
+                    sample_agents_truncated,
+                )
+
                 traits_rng = np.random.default_rng([seed, 2])
-                sampled = sample_agents(n_agents=self.n_agents, rng=traits_rng)
+                sampled, n_truncated = sample_agents_truncated(
+                    n_agents=self.n_agents,
+                    mu=MU_DEFAULT if self.trait_mu is None else self.trait_mu,
+                    sigma=SIGMA_DEFAULT if self.trait_sigma is None else self.trait_sigma,
+                    rng=traits_rng,
+                )
                 self.speeds = sampled[:, 0].astype(float)
                 self.reactions = sampled[:, 1].astype(float)
+                self.truncated_traits = int(n_truncated)
             self.delay_steps = np.ceil(self.reactions / self.step_s).astype(int)
             self.delay_steps = np.where(self.delay_steps < 0, 0, self.delay_steps)
             self.budget = np.zeros(self.n_agents, dtype=float)

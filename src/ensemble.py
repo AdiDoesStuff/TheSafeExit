@@ -12,11 +12,25 @@ from src.simulation import EvacuationSimulation
 
 
 class EnsembleResult:
-    def __init__(self, seeds: Sequence[int], base_seed: int, per_run: Dict[str, np.ndarray], max_steps: int):
+    def __init__(
+        self,
+        seeds: Sequence[int],
+        base_seed: int,
+        per_run: Dict[str, np.ndarray],
+        max_steps: int,
+        blocked_counts: Optional[np.ndarray] = None,
+        truncated_traits: int = 0,
+    ):
         self.seeds = np.asarray(seeds, dtype=int)
         self.base_seed = int(base_seed)
         self.max_steps = int(max_steps)
         self.per_run = per_run  # dict of arrays length n_runs
+        self.blocked_counts = (
+            np.zeros((0, 0), dtype=int)
+            if blocked_counts is None
+            else np.asarray(blocked_counts, dtype=int)
+        )
+        self.truncated_traits = int(truncated_traits)
 
     @property
     def n_runs(self) -> int:
@@ -58,6 +72,9 @@ class EnsembleResult:
             }
         out["fraction_finished"] = float(np.mean(self.per_run["finished"]))
         out["fraction_evacuated_mean"] = float(np.mean(self.per_run["fraction_evacuated"]))
+        if self.blocked_counts.size:
+            out["blocked_total"] = int(self.blocked_counts.sum())
+        out["truncated_traits_total"] = int(self.truncated_traits)
         return out
 
     def save_csv(self, path: str) -> None:
@@ -85,10 +102,14 @@ def run_ensemble(grid, n_runs: int = 200, base_seed: int = 0, seeds=None, max_st
     cens100 = np.zeros(n_runs, dtype=bool)
     frac_evac = np.empty(n_runs, dtype=float)
     finished = np.zeros(n_runs, dtype=bool)
+    blocked_counts = np.zeros(np.asarray(grid).shape, dtype=int)
+    truncated_traits_total = 0
 
     for i, seed in enumerate(seeds):
         sim = EvacuationSimulation(floor_plan=np.asarray(grid), seed=seed, **sim_kwargs)
         res = sim.run(max_steps=max_steps)
+        blocked_counts += sim.blocked_counts
+        truncated_traits_total += int(getattr(sim, "truncated_traits", 0))
         times = list(sim.evacuation_times.values())
         n_agents = sim.n_agents
         t50 = _quantile_static(times, n_agents, 0.5)
@@ -113,7 +134,14 @@ def run_ensemble(grid, n_runs: int = 200, base_seed: int = 0, seeds=None, max_st
         "fraction_evacuated": frac_evac,
         "finished": finished,
     }
-    return EnsembleResult(seeds=seeds, base_seed=base_seed, per_run=per_run, max_steps=max_steps)
+    return EnsembleResult(
+        seeds=seeds,
+        base_seed=base_seed,
+        per_run=per_run,
+        max_steps=max_steps,
+        blocked_counts=blocked_counts,
+        truncated_traits=truncated_traits_total,
+    )
 
 
 def _quantile_static(times, n, p):
