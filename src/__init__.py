@@ -34,6 +34,7 @@ from src.optimization import (
     worst_case_evacuation_time,
     optimize_exit_placement,
 )
+from src.ensemble import run_ensemble, EnsembleResult, paired_difference
 
 __version__ = "0.1.0"
 __all__ = [
@@ -67,6 +68,9 @@ __all__ = [
     "build_grid_with_exit_on_wall",
     "worst_case_evacuation_time",
     "optimize_exit_placement",
+    "run_ensemble",
+    "EnsembleResult",
+    "paired_difference",
 ]
 
 
