@@ -4,6 +4,7 @@ from src.floor_plan import (
     get_simple_room,
     get_two_exit_room,
     get_room_with_pillar,
+    get_room_with_barrier,
     get_hallway,
     validate_reachability,
     CELL_WALL,
@@ -55,5 +56,24 @@ def test_unreachable_floor_plan_raises_error():
 
     with pytest.raises(ValueError, match="Floor plan reachability validation failed"):
         validate_reachability(grid)
+
+
+def test_room_with_barrier():
+    grid = get_room_with_barrier(20, 20, exit_width=2, barrier_col=10, barrier_row_end=13)
+    assert grid.shape == (20, 20)
+    assert np.sum(grid == CELL_EXIT) == 2
+    # Barrier wall occupies row 1..13 on col 10
+    assert np.all(grid[1:14, 10] == CELL_WALL)
+    # Opening at row 14..18 is walkable
+    assert np.all(grid[14:19, 10] == CELL_WALKABLE)
+    assert validate_reachability(grid) is True
+
+
+def test_room_with_offcenter_pillar():
+    grid = get_room_with_pillar(20, 20, exit_width=2, pillar_size=4, center=(5, 14))
+    assert grid.shape == (20, 20)
+    assert np.all(grid[3:7, 12:16] == CELL_WALL)
+    assert validate_reachability(grid) is True
+
 
 

@@ -15,20 +15,55 @@ SIGMA_DEFAULT = np.array([
 ], dtype=np.float64)
 
 
-def sample_agents(n_agents: int = 1000, 
-                  mu: np.ndarray = MU_DEFAULT, 
-                  sigma: np.ndarray = SIGMA_DEFAULT, 
-                  seed: Optional[int] = None) -> np.ndarray:
+def sample_agents(n_agents: int = 1000,
+                  mu: np.ndarray = MU_DEFAULT,
+                  sigma: np.ndarray = SIGMA_DEFAULT,
+                  seed: Optional[int] = None,
+                  rng: Optional[np.random.Generator] = None) -> np.ndarray:
     """
     Samples N agent trait vectors x ~ N(mu, Sigma) using numpy.random.default_rng.
-    
+
     Returns:
         agents: Array of shape (n_agents, 2) where column 0 is walking speed (m/s)
                 and column 1 is reaction time (s).
     """
-    rng = np.random.default_rng(seed)
+    if rng is None:
+        rng = np.random.default_rng(seed)
     agents = rng.multivariate_normal(mu, sigma, size=n_agents)
     return agents
+
+
+def truncate_traits(agents: np.ndarray) -> tuple:
+    """
+    Clips sampled traits: speed to [0.3, 2.0] m/s, reaction time to >= 0.
+    Returns (clipped_agents, n_truncated).
+    """
+    agents = np.asarray(agents, dtype=float).copy()
+    n_trunc = 0
+    # speed
+    speed_oob = (agents[:, 0] < 0.3) | (agents[:, 0] > 2.0)
+    # reaction
+    react_oob = agents[:, 1] < 0.0
+    n_trunc = int(np.sum(speed_oob | react_oob))
+    agents[:, 0] = np.clip(agents[:, 0], 0.3, 2.0)
+    agents[:, 1] = np.clip(agents[:, 1], 0.0, None)
+    return agents, n_trunc
+
+
+def sample_agents_truncated(n_agents: int = 1000,
+                            mu: np.ndarray = MU_DEFAULT,
+                            sigma: np.ndarray = SIGMA_DEFAULT,
+                            seed: Optional[int] = None,
+                            rng: Optional[np.random.Generator] = None) -> tuple:
+    if rng is None:
+        rng = np.random.default_rng(seed)
+    agents = sample_agents(n_agents=n_agents, mu=mu, sigma=sigma, rng=rng)
+    return truncate_traits(agents)
+
+
+# Aliases for compatibility
+sample_truncated_agents = sample_agents_truncated
+sample_truncated_traits = sample_agents_truncated
 
 
 def validate_sample_statistics(agents: np.ndarray, 

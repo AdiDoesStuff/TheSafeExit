@@ -99,10 +99,33 @@ class PanicField:
         dy: float = 1.0,
         dt: float | None = None,
         safety_factor: float = 0.9,
+        decay: float = 0.0,
     ):
         floor_plan = np.asarray(floor_plan)
         if floor_plan.ndim != 2:
             raise ValueError("floor_plan must be a 2D array")
+
+        # Validation
+        for name, val in (("D", D), ("k", k), ("dx", dx), ("dy", dy), ("decay", decay), ("safety_factor", safety_factor)):
+            if not np.isfinite(val):
+                raise ValueError(f"{name} must be finite")
+        if D <= 0:
+            raise ValueError("D must be > 0")
+        if dx <= 0:
+            raise ValueError("dx must be > 0")
+        if dy <= 0:
+            raise ValueError("dy must be > 0")
+        if k < 0:
+            raise ValueError("k must be >= 0")
+        if safety_factor <= 0 or safety_factor > 1:
+            raise ValueError("safety_factor must satisfy 0 < safety_factor <= 1")
+        if decay < 0:
+            raise ValueError("decay must be >= 0")
+        if dt is not None:
+            if not np.isfinite(dt):
+                raise ValueError("dt must be finite")
+            if dt <= 0:
+                raise ValueError("dt must be > 0")
 
         self.floor_plan = floor_plan
         self.rows, self.cols = floor_plan.shape
@@ -110,6 +133,7 @@ class PanicField:
         self.k = float(k)
         self.dx = float(dx)
         self.dy = float(dy)
+        self.decay = float(decay)
 
         self.wall_mask = floor_plan == CELL_WALL
         self.passable_mask = ~self.wall_mask  # walkable OR exit
@@ -133,6 +157,9 @@ class PanicField:
                 )
             self.dt = float(dt)
 
+        if self.decay * self.dt >= 1.0:
+            raise ValueError("decay*dt must be < 1")
+
         self.u = np.zeros((self.rows, self.cols), dtype=float)
 
     # ------------------------------------------------------------------ #
@@ -148,8 +175,14 @@ class PanicField:
         Returns safety_factor * (theoretical limit), so the default already
         includes margin.
         """
-        if D <= 0:
-            raise ValueError("Diffusion coefficient D must be positive.")
+        if not np.isfinite(D) or D <= 0:
+            raise ValueError("Diffusion coefficient D must be positive and finite.")
+        if not np.isfinite(dx) or dx <= 0:
+            raise ValueError("dx must be > 0 and finite.")
+        if not np.isfinite(dy) or dy <= 0:
+            raise ValueError("dy must be > 0 and finite.")
+        if not np.isfinite(safety_factor) or safety_factor <= 0 or safety_factor > 1:
+            raise ValueError("safety_factor must satisfy 0 < safety_factor <= 1.")
         limit = 0.5 / (D * (1.0 / dx**2 + 1.0 / dy**2))
         return safety_factor * limit
 
@@ -204,6 +237,8 @@ class PanicField:
                 f"step() called with dt={step_dt}, which violates CFL "
                 f"stability for this field's D={self.D}, dx={self.dx}, dy={self.dy}."
             )
+        if self.decay * step_dt >= 1.0:
+            raise ValueError("decay*dt must be < 1")
 
         lap = self._laplacian(self.u)
 
@@ -216,7 +251,7 @@ class PanicField:
                 )
             source = self.k * density
 
-        u_new = self.u + step_dt * (self.D * lap + source)
+        u_new = self.u + step_dt * (self.D * lap + source - self.decay * self.u)
         u_new = np.clip(u_new, 0.0, None)   # panic density can't go negative
         u_new[self.wall_mask] = 0.0         # walls never hold panic
 
