@@ -74,7 +74,9 @@ Four methods: full dense LU (forms `N`), one sparse `spsolve`, CG on the uniform
 chain, and BiCGSTAB with ILU on the rational chain. Time and peak Python
 allocation are measured with `time.perf_counter` and `tracemalloc`. Dense LU is
 skipped when its estimated allocation exceeds 512 MB; the skip is a recorded
-row, not a silent omission.
+row, not a silent omission. A separate SVD diagnostic at the largest size up to
+40x40 reports the singular-value spectrum, the condition number of `I - Q`, and
+the error of rank-truncated expected times.
 
 **Pass rule.** At least one method finishes 100x100 with relative residual below
 `1e-8`, and no method fails. A large residual or a memory skip is reported as
@@ -82,9 +84,11 @@ such.
 
 **Read.** `e2_rows.csv` records status (`ok`, `skipped_memory`, `failed`,
 `residual_too_large`), seconds, residual, iterations and peak traced memory.
-`e2_plot.png` shows time and residual against state count. The honest conclusion
-is about measured sizes only: dense `N` does not scale, while the sparse and
-iterative solves do.
+`e2_svd.csv` records the rank-truncation error, residual, smallest kept singular
+value and condition number. `e2_plot.png` shows time, residual and the SVD
+diagnostic. The honest conclusion is about measured sizes only: dense `N` does
+not scale, while the sparse and iterative solves do; rank truncation is accurate
+only near full rank, so the SVD is a diagnostic rather than the default solver.
 
 ## E3 — Panic and capacity
 

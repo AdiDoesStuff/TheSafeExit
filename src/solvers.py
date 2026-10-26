@@ -392,14 +392,20 @@ def svd_rank_truncation_errors(
     """
     Rank-truncated SVD approximation error for the expected-time solve.
 
-    For each rank r, reconstruct ``A_r = U_r S_r V_r^T``, solve for the
-    expected times with that approximation, and report
+    For each rank r, form the truncated pseudo-inverse
+
+        t_r = V_r S_r^(-1) U_r^T 1
+
+    and report
 
         relative_error = ||t_r - t_exact|| / ||t_exact||.
 
-    This quantifies the "SVD helps for small/ill-conditioned systems" claim:
-    the smallest rank that keeps the error small is the effective rank of the
-    problem.
+    This is the expected-time vector produced by keeping only the r largest
+    singular components, not a least-squares fit of a rank-deficient matrix. It
+    quantifies whether a low-rank approximation is adequate: on the evacuation
+    chains used here the effective rank is close to n, so truncation is only
+    accurate near full rank and the SVD is a diagnostic rather than a
+    compression method.
     """
     A = _system_matrix(Q).toarray()
     n = A.shape[0]
@@ -417,7 +423,7 @@ def svd_rank_truncation_errors(
             raise ValueError("ranks must be positive integers")
         r = min(r, n)
         A_r = (U[:, :r] * s[:r]) @ Vt[:r, :]
-        t_r, *_ = np.linalg.lstsq(A_r, b, rcond=None)
+        t_r = Vt[:r, :].T @ ((U[:, :r].T @ b) / s[:r])
         rel_error = float(np.linalg.norm(t_r - t_exact) / denom)
         rel_residual = float(np.linalg.norm(A_r @ t_r - b) / np.linalg.norm(b))
         out.append(

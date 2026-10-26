@@ -8,6 +8,8 @@ from typing import Any, Callable, Dict, List, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+import scipy.linalg as sla
+import scipy.sparse as sp
 
 from experiments.common import (
     ExperimentSpec,
@@ -26,23 +28,27 @@ from src.solvers import (
     solve_expected_time_iterative,
     solve_expected_time_sparse,
     solve_fundamental_lu,
+    svd_rank_truncation_errors,
 )
 
 
 SPEC = ExperimentSpec(
     id="E2",
-    title="Solver scaling",
+    title="Solver scaling and SVD diagnostics",
     question="How does the solver scale, and which methods make 100x100 feasible?",
     method=(
         "Grids 20..150 with exit width max(1, size/10). Time and peak Python "
         "allocation are recorded for full dense LU, one sparse spsolve, CG on "
         "the uniform chain, and BiCGSTAB on the rational chain. Dense LU is "
-        "skipped when its estimated allocation exceeds the configured cap."
+        "skipped when its estimated allocation exceeds the configured cap. A "
+        "separate SVD diagnostic at the largest size up to 40x40 reports the "
+        "condition number of I-Q and the error of rank-truncated expected times."
     ),
     expected=(
         "Dense LU grows fastest and eventually cannot fit; the sparse single "
         "solve and iterative methods reach 100x100 with relative residual below "
-        "1e-8."
+        "1e-8. Rank truncation is accurate only near full rank, so the SVD is a "
+        "small-system diagnostic rather than the default solver."
     ),
     failure_criterion=(
         "A method is claimed feasible only if it finished with residual below "
@@ -186,8 +192,40 @@ def run(cfg: Any, out_dir: str) -> Dict[str, Any]:
 
     csv_path = write_csv(artefact(out_dir, SPEC.id, "rows.csv"), rows)
 
-    # Plot time and residual against state count.
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    # 2.6 SVD diagnostic: condition number and rank-truncation error. The SVD is
+    # O(n^3), so it is done at the largest tested size up to 40x40.
+    svd_size = min(40, max(sizes))
+    svd_grid = get_simple_room(
+        svd_size, svd_size, exit_width=max(1, svd_size // 10)
+    )
+    svd_state_map, _, n_svd, n_svd_abs = build_state_map(svd_grid)
+    svd_dist = compute_exit_distance_field(svd_grid)
+    Q_svd, _ = build_rational_QR(
+        svd_grid, svd_dist, svd_state_map, n_svd, n_svd_abs
+    )
+    A_svd = (sp.eye(n_svd, format="csr", dtype=float) - Q_svd).toarray()
+    singular = sla.svdvals(A_svd)
+    condition = float(singular[0] / singular[-1])
+    rank_set = sorted(
+        {1, 2, 5, 10, 20, 50, 100, 200, n_svd}
+        | ({500} if n_svd >= 500 else set())
+    )
+    truncation = svd_rank_truncation_errors(Q_svd, ranks=rank_set)
+    for row in truncation:
+        row["size"] = svd_size
+        row["n_states"] = n_svd
+        row["condition_number"] = condition
+    svd_csv = write_csv(artefact(out_dir, SPEC.id, "svd.csv"), truncation)
+    full_rank_error = next(
+        r["relative_error"] for r in truncation if int(r["rank"]) == n_svd
+    )
+    progress(
+        f"E2 SVD diagnostic: {n_svd} states, condition {condition:.1f}, "
+        f"full-rank error {full_rank_error:.1e}"
+    )
+
+    # Plot time, residual and the SVD diagnostic.
+    fig, axes = plt.subplots(1, 3, figsize=(17, 5.2))
     colours = {
         "dense_lu_full_N": "#d1495b",
         "sparse_spsolve": "#00798c",
@@ -231,7 +269,33 @@ def run(cfg: Any, out_dir: str) -> Dict[str, Any]:
     style_axes(axes[1], "Relative residual", "Transient states", "||(I-Q)t - 1|| / ||1||")
     axes[0].legend(fontsize=8)
     axes[1].legend(fontsize=8)
-    fig.suptitle("E2 — numerical engine scaling (uncalibrated, for comparing designs)", fontsize=12)
+
+    ax = axes[2]
+    ax.semilogy(
+        np.arange(1, n_svd + 1),
+        singular / singular[0],
+        color="#457b9d",
+        lw=1.0,
+        label="singular values",
+    )
+    ax.semilogy(
+        [r["rank"] for r in truncation],
+        [max(r["relative_error"], 1e-18) for r in truncation],
+        "o-",
+        color="#e63946",
+        ms=4,
+        label="rank-truncated error",
+    )
+    ax.axhline(1e-8, color="black", ls=":", lw=1, label="1e-8")
+    style_axes(
+        ax,
+        f"SVD diagnostic ({svd_size}x{svd_size}, cond {condition:.0f})",
+        "Rank / singular-value index",
+        "sigma_i / sigma_max  or  relative error",
+    )
+    ax.legend(fontsize=8)
+
+    fig.suptitle("E2 — numerical engine scaling and SVD role (uncalibrated, for comparing designs)", fontsize=12)
     fig.tight_layout()
     png_path = save_figure(fig, artefact(out_dir, SPEC.id, "plot.png"))
 
@@ -255,6 +319,10 @@ def run(cfg: Any, out_dir: str) -> Dict[str, Any]:
             if skipped
             else "; dense LU ran at every tested size."
         )
+        + (
+            f" SVD at {svd_size}x{svd_size}: condition number {condition:.0f}, "
+            f"full-rank truncation error {full_rank_error:.1e}."
+        )
     )
     return {
         "id": SPEC.id,
@@ -263,5 +331,12 @@ def run(cfg: Any, out_dir: str) -> Dict[str, Any]:
         "key_finding": key,
         "rows": rows,
         "feasible_at_100x100": feasible,
-        "outputs": [csv_path, png_path],
+        "svd_diagnostic": {
+            "size": svd_size,
+            "n_states": n_svd,
+            "condition_number": condition,
+            "full_rank_relative_error": full_rank_error,
+            "ranks": rank_set,
+        },
+        "outputs": [csv_path, svd_csv, png_path],
     }

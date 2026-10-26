@@ -36,6 +36,9 @@ def test_e2_smoke_reports_low_residuals(tmp_path):
     for row in sparse + cg + bi:
         assert row["status"] == "ok", row
         assert row["residual"] < 1e-8
+    assert np.isfinite(result["svd_diagnostic"]["condition_number"])
+    assert result["svd_diagnostic"]["condition_number"] > 1.0
+    assert result["svd_diagnostic"]["full_rank_relative_error"] < 1e-8
     for path in result["outputs"]:
         assert os.path.exists(path), path
 
