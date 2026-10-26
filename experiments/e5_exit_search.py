@@ -112,10 +112,27 @@ def run(cfg: Any, out_dir: str) -> Dict[str, Any]:
         bfgs_summary = bfgs_ensemble.summary()
 
         exact_best = exact["best"]
-        exact_ensemble = exact["best_by_ensemble"]
+        exact_best_ensemble = exact_best.get("ensemble")
+        ensemble_best = exact["best_by_ensemble"]
+        exact_best_t90 = (
+            exact_best_ensemble["T90_median"]
+            if exact_best_ensemble is not None
+            else np.nan
+        )
+        ensemble_best_t90 = (
+            ensemble_best["ensemble"]["T90_median"]
+            if ensemble_best is not None
+            else np.nan
+        )
+        bfgs_t90 = bfgs_summary["T90"]["median"]
         gap = float(bfgs_score - exact["best_score"])
         miss = gap > 1e-9
         enumerated_min = min(c["max_distance"] for c in exact["candidates"])
+        ensemble_matches_exact = bool(
+            ensemble_best is not None
+            and ensemble_best["wall"] == exact_best["wall"]
+            and ensemble_best["position"] == exact_best["position"]
+        )
         summary_rows.append(
             {
                 "case": name,
@@ -129,17 +146,28 @@ def run(cfg: Any, out_dir: str) -> Dict[str, Any]:
                 "exact_score_is_enumerated_min": bool(
                     abs(exact["best_score"] - enumerated_min) < 1e-12
                 ),
+                "exact_ensemble_T90": exact_best_t90,
                 "bfgs_wall": bfgs["best_wall"],
                 "bfgs_position": bfgs["best_position"],
                 "bfgs_score": bfgs_score,
                 "bfgs_gap": gap,
                 "bfgs_missed_optimum": miss,
-                "exact_ensemble_T90": exact_ensemble["ensemble"]["T90_median"]
-                if exact_ensemble is not None
-                else np.nan,
-                "bfgs_ensemble_T90": bfgs_summary["T90"]["median"],
-                "exact_fraction_finished": exact_ensemble["ensemble"]["fraction_finished"]
-                if exact_ensemble is not None
+                "bfgs_ensemble_T90": bfgs_t90,
+                "bfgs_T90_minus_exact_T90": (
+                    float(bfgs_t90 - exact_best_t90)
+                    if np.isfinite(bfgs_t90) and np.isfinite(exact_best_t90)
+                    else np.nan
+                ),
+                "ensemble_best_wall": ensemble_best["wall"]
+                if ensemble_best is not None
+                else None,
+                "ensemble_best_position": ensemble_best["position"]
+                if ensemble_best is not None
+                else None,
+                "ensemble_best_T90": ensemble_best_t90,
+                "ensemble_best_matches_exact": ensemble_matches_exact,
+                "exact_fraction_finished": exact_best_ensemble["fraction_finished"]
+                if exact_best_ensemble is not None
                 else np.nan,
                 "bfgs_fraction_finished": bfgs_summary["fraction_finished"],
             }
@@ -220,16 +248,22 @@ def run(cfg: Any, out_dir: str) -> Dict[str, Any]:
     png_path = save_figure(fig, artefact(out_dir, SPEC.id, "plot.png"))
 
     n_missed = sum(1 for r in summary_rows if r["bfgs_missed_optimum"])
+    n_ensemble_diff = sum(
+        1 for r in summary_rows if not r["ensemble_best_matches_exact"]
+    )
     taus = [r["kendall_tau_distance_vs_T90"] for r in top_rows]
     finite_taus = [t for t in taus if np.isfinite(t)]
     key = (
         f"BFGS missed the enumerated optimum on {n_missed}/{len(summary_rows)} grids; "
         f"largest score gap {max(r['bfgs_gap'] for r in summary_rows):.1f} steps. "
-        f"Median distance-vs-T90 Kendall tau among finalists "
-        f"{np.median(finite_taus):.2f}."
-        if finite_taus
-        else f"BFGS missed the enumerated optimum on {n_missed}/{len(summary_rows)} grids."
+        f"The ensemble re-score preferred a different position from the stage-1 "
+        f"optimum on {n_ensemble_diff}/{len(summary_rows)} grids."
     )
+    if finite_taus:
+        key += (
+            f" Median distance-vs-T90 Kendall tau among finalists "
+            f"{np.median(finite_taus):.2f}."
+        )
     passed = all(r["exact_score_is_enumerated_min"] for r in summary_rows)
     return {
         "id": SPEC.id,
@@ -239,5 +273,6 @@ def run(cfg: Any, out_dir: str) -> Dict[str, Any]:
         "summary": summary_rows,
         "top_candidates": top_rows,
         "n_bfgs_misses": int(n_missed),
+        "n_ensemble_disagreements": int(n_ensemble_diff),
         "outputs": [summary_path, top_path, png_path],
     }

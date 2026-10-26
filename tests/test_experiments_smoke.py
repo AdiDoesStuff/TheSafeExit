@@ -1,3 +1,4 @@
+import importlib
 import json
 import os
 
@@ -8,6 +9,30 @@ from experiments import e1_exact_vs_mc, e2_solver_scaling, run_all
 from experiments.config import ExperimentConfig
 from experiments.e4_density_sweep import _narrowest_cell
 from experiments.layouts import e4_layout
+
+
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "experiments.e1_exact_vs_mc",
+        "experiments.e2_solver_scaling",
+        "experiments.e3_panic_capacity",
+        "experiments.e4_density_sweep",
+        "experiments.e5_exit_search",
+        "experiments.e6_traits",
+        "experiments.e7_robustness",
+    ],
+)
+def test_experiment_modules_declare_a_complete_spec(module_name):
+    module = importlib.import_module(module_name)
+    spec = module.SPEC
+    assert spec.id.startswith("E")
+    assert spec.title
+    assert spec.question
+    assert spec.method
+    assert spec.expected
+    assert spec.failure_criterion
+    assert callable(module.run)
 
 
 def test_e1_smoke_writes_rows_and_plot(tmp_path):

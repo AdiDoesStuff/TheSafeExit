@@ -150,12 +150,14 @@ ensemble T90 are compared.
 **Pass rule.** The reported exact score is the minimum of the enumerated scores
 on every grid. A BFGS gap is reported as measured, including a zero gap.
 
-**Read.** `e5_summary.csv` has the exact and BFGS choices, scores, gap, miss flag
-and both ensemble T90 values. `e5_top_candidates.csv` ranks the finalists by
-rational distance and by T90 and reports Kendall tau between the two. A zero
-gap means BFGS matched the enumerated optimum on these grids; it does not make
-BFGS exact in general, and the exhaustive search's guarantee is only over the
-enumerated positions and the stated objective.
+**Read.** `e5_summary.csv` has the exact and BFGS choices, scores, gap, miss flag,
+the ensemble T90 of the stage-1 optimum, the stage-2 ensemble winner, and the
+BFGS ensemble T90. `ensemble_best_matches_exact` records whether the ensemble
+preferred a different position from the stage-1 optimum. A zero BFGS gap means
+BFGS matched the enumerated optimum on these grids; it does not make BFGS exact
+in general, and the exhaustive search's guarantee is only over the enumerated
+positions and the stated objective. `e5_top_candidates.csv` ranks the finalists
+by rational distance and by T90 and reports Kendall tau between the two.
 
 ## E6 — Traits on/off and correlation
 

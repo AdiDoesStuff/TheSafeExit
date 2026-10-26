@@ -150,12 +150,14 @@ def run(cfg: Any, out_dir: str) -> Dict[str, Any]:
     for spec in PARAM_SPECS:
         param = spec["name"]
         config_names = list(layouts)
+        baseline_t90: List[float] = []
         baseline_ranks: List[int] = []
         for value_label, _update in spec["values"]:
             if value_label == spec["baseline"]:
-                baseline_ranks = rank_values(
-                    [results[(param, value_label, c)]["T90"] for c in config_names]
-                )
+                baseline_t90 = [
+                    results[(param, value_label, c)]["T90"] for c in config_names
+                ]
+                baseline_ranks = rank_values(baseline_t90)
                 break
         if not baseline_ranks:
             raise RuntimeError(f"baseline value missing for parameter {param}")
@@ -164,7 +166,9 @@ def run(cfg: Any, out_dir: str) -> Dict[str, Any]:
         for value_label, _update in spec["values"]:
             t90_values = [results[(param, value_label, c)]["T90"] for c in config_names]
             ranks = rank_values(t90_values)
-            tau = kendall_tau(ranks, baseline_ranks)
+            # tau-b is computed on the raw T90 values so that ties are handled
+            # correctly; rank_values is only for the human-readable rank column.
+            tau = kendall_tau(t90_values, baseline_t90)
             param_taus.append(tau)
             for config_name, t90, rank_value in zip(config_names, t90_values, ranks):
                 block = results[(param, value_label, config_name)]
@@ -223,22 +227,36 @@ def run(cfg: Any, out_dir: str) -> Dict[str, Any]:
     fig.tight_layout()
     png_path = save_figure(fig, artefact(out_dir, SPEC.id, "plot.png"))
 
-    min_taus = {
-        spec["name"]: float(np.nanmin(tau_matrix[i]))
-        for i, spec in enumerate(PARAM_SPECS)
-    }
-    unstable = [name for name, tau in min_taus.items() if tau < 1.0 - 1e-9]
+    min_taus: Dict[str, float] = {}
+    unstable: List[str] = []
+    undetermined: List[str] = []
+    for i, spec in enumerate(PARAM_SPECS):
+        finite = np.asarray(tau_matrix[i], dtype=float)
+        finite = finite[np.isfinite(finite)]
+        if finite.size == 0:
+            min_taus[spec["name"]] = float("nan")
+            undetermined.append(spec["name"])
+            continue
+        value = float(np.min(finite))
+        min_taus[spec["name"]] = value
+        if value < 1.0 - 1e-9:
+            unstable.append(spec["name"])
     censored = sum(1 for row in rows if row["censored_T90"])
     if unstable:
         key = (
             f"Rankings changed for {', '.join(unstable)} (minimum tau "
-            f"{min(min_taus.values()):.2f}); these parameters must be named as "
-            f"limitations. Censored T90 values: {censored}."
+            f"{min(min_taus[n] for n in unstable):.2f}); these parameters must be "
+            f"named as limitations. Censored T90 values: {censored}."
         )
     else:
         key = (
             "Rankings were identical (tau = 1) for every one-at-a-time sweep; "
             f"censored T90 values: {censored}."
+        )
+    if undetermined:
+        key += (
+            f" Rankings could not be tested for {', '.join(undetermined)} because "
+            "too few runs finished."
         )
 
     passed = len(rows) == len(PARAM_SPECS) * 3 * len(layouts) and all(
@@ -251,6 +269,7 @@ def run(cfg: Any, out_dir: str) -> Dict[str, Any]:
         "key_finding": key,
         "min_tau_by_parameter": min_taus,
         "unstable_parameters": unstable,
+        "undetermined_parameters": undetermined,
         "n_censored_rows": int(censored),
         "rows": rows,
         "outputs": [csv_path, png_path],
