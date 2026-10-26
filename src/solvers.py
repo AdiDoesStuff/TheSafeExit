@@ -106,4 +106,82 @@ def benchmark_solvers(sizes: list = [10, 20, 30, 50, 100], max_svd_size: int = 5
             results["max_diffs"].append(None)
             results["notes"].append("SVD skipped (O(n^3) cap reached at n > 2500 states)")
 
-    return results
+def run_monte_carlo(
+    Q: sp.spmatrix,
+    R: sp.spmatrix,
+    start_state_idx: int,
+    M: int,
+    rng: Any = None,
+) -> Dict[str, Any]:
+    """
+    Runs M independent Monte Carlo trials on a fixed absorbing Markov chain [Q | R].
+
+    Parameters:
+        Q: Sparse transition matrix among transient states (shape n_transient x n_transient).
+        R: Sparse transition matrix from transient to absorbing exit states (shape n_transient x n_absorbing).
+        start_state_idx: Transient state index (0 to n_transient - 1) where agent begins.
+        M: Number of independent simulation trials.
+        rng: Optional np.random.Generator or integer seed.
+
+    Returns:
+        dict containing:
+            'trial_times': np.ndarray of shape (M,) with steps to absorption per trial.
+            'mean': Sample mean evacuation time across M trials.
+            'std_error': Standard error of the sample mean (std / sqrt(M)).
+    """
+    n_transient = Q.shape[0]
+    if not (0 <= start_state_idx < n_transient):
+        raise ValueError(f"start_state_idx {start_state_idx} is out of bounds for n_transient={n_transient}.")
+    if M <= 0:
+        raise ValueError("M must be a positive integer.")
+
+    if rng is None or isinstance(rng, (int, np.integer)):
+        gen = np.random.default_rng(rng)
+    elif isinstance(rng, np.random.Generator):
+        gen = rng
+    else:
+        gen = np.random.default_rng()
+
+    P = sp.hstack([Q, R], format="csr")
+
+    # Precompute row CDFs and targets for fast categorical sampling
+    row_targets = []
+    row_cdfs = []
+    for s in range(n_transient):
+        start_ptr = P.indptr[s]
+        end_ptr = P.indptr[s + 1]
+        idx = P.indices[start_ptr:end_ptr]
+        probs = P.data[start_ptr:end_ptr].astype(np.float64)
+        if len(probs) == 0:
+            raise ValueError(f"Transient state {s} has no outgoing transitions.")
+        p_sum = probs.sum()
+        if p_sum <= 0:
+            raise ValueError(f"Transient state {s} has non-positive outgoing probability sum.")
+        probs = probs / p_sum
+        cum = np.cumsum(probs)
+        cum[-1] = 1.0  # Guarantee upper bound for searchsorted
+        row_targets.append(idx)
+        row_cdfs.append(cum)
+
+    trial_times = np.zeros(M, dtype=int)
+    for m in range(M):
+        curr = start_state_idx
+        steps = 0
+        while curr < n_transient:
+            u = gen.random()
+            targets = row_targets[curr]
+            cdfs = row_cdfs[curr]
+            next_s = targets[np.searchsorted(cdfs, u)]
+            steps += 1
+            curr = next_s
+        trial_times[m] = steps
+
+    mean_val = float(np.mean(trial_times))
+    std_val = float(np.std(trial_times, ddof=1)) if M > 1 else 0.0
+    std_error = std_val / np.sqrt(M) if M > 0 else 0.0
+
+    return {
+        "trial_times": trial_times,
+        "mean": mean_val,
+        "std_error": float(std_error),
+    }

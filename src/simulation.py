@@ -52,6 +52,7 @@ class EvacuationSimulation:
         beta: float = 0.4,
         initial_positions: Optional[Sequence[Tuple[int, int]]] = None,
         seed: Optional[int] = None,
+        panic_enabled: bool = True,
     ):
         self.floor_plan = np.asarray(floor_plan, dtype=int)
         self.rows, self.cols = self.floor_plan.shape
@@ -59,6 +60,7 @@ class EvacuationSimulation:
         self.D = D
         self.k = k
         self.beta = beta
+        self.panic_enabled = panic_enabled
         self.rng = np.random.default_rng(seed)
 
         # 1. Geometry and Geodesic Distance Field
@@ -141,21 +143,26 @@ class EvacuationSimulation:
                 "snapshot": None,
             }
 
-        # 1. Calculate agent crowd density
-        active_coords = [self.index_to_state[self.agent_states[i]] for i in active_indices]
-        density = compute_agent_density(active_coords, (self.rows, self.cols))
+        if self.panic_enabled:
+            # 1. Calculate agent crowd density
+            active_coords = [self.index_to_state[self.agent_states[i]] for i in active_indices]
+            density = compute_agent_density(active_coords, (self.rows, self.cols))
 
-        # 2. Advance Panic Diffusion PDE (Engine C)
-        self.panic_field.step(density)
+            # 2. Advance Panic Diffusion PDE (Engine C)
+            self.panic_field.step(density)
 
-        # 3. Form transient state panic vector and mixing vector lambda_t
-        panic_vec = self.panic_field.u[self._transient_rows, self._transient_cols]
-        lam_t = np.clip(self.beta * panic_vec, 0.0, 1.0)
+            # 3. Form transient state panic vector and mixing vector lambda_t
+            panic_vec = self.panic_field.u[self._transient_rows, self._transient_cols]
+            lam_t = np.clip(self.beta * panic_vec, 0.0, 1.0)
 
-        # 4. Build dynamic transition matrices (Q_t, R_t)
-        Q_t, R_t = build_mixed_QR(
-            self.Q_rational, self.R_rational, self.Q_uniform, self.R_uniform, lam_t
-        )
+            # 4. Build dynamic transition matrices (Q_t, R_t)
+            Q_t, R_t = build_mixed_QR(
+                self.Q_rational, self.R_rational, self.Q_uniform, self.R_uniform, lam_t
+            )
+        else:
+            panic_vec = np.zeros(self.n_transient, dtype=float)
+            lam_t = np.zeros(self.n_transient, dtype=float)
+            Q_t, R_t = self.Q_rational, self.R_rational
 
         # 5. Snapshot Bottleneck Heatmap (Engine D: solve N_t and immediately reduce to 2D)
         snapshot = None
@@ -181,6 +188,7 @@ class EvacuationSimulation:
             snapshot = {
                 "t": self.time_step + 1,
                 "heatmap_2d": heatmap_2d,
+                "panic_2d": self.panic_field.u.copy() if self.panic_field is not None else None,
                 "top3_cells": top3_cells,
                 "mean_panic": float(np.mean(panic_vec)),
                 "active_agents": int(n_active),

@@ -64,10 +64,15 @@ def get_two_exit_room(rows: int = 20, cols: int = 20, exit_width: int = 2) -> np
 
 
 def get_room_with_pillar(
-    rows: int = 20, cols: int = 20, exit_width: int = 2, pillar_size: int = 4
+    rows: int = 20,
+    cols: int = 20,
+    exit_width: int = 2,
+    pillar_size: int = 4,
+    center: Optional[Tuple[int, int]] = None,
 ) -> np.ndarray:
     """
-    Creates a rectangular room with an exit on the right wall and a solid square pillar (wall obstruction) in the center.
+    Creates a rectangular room with an exit on the right wall and a solid square pillar (wall obstruction).
+    The pillar can be placed in the center (default) or at a custom (row, col) center position.
     """
     if rows < 7 or cols < 7:
         raise ValueError("Room dimensions must be at least 7x7 for a central pillar.")
@@ -76,17 +81,63 @@ def get_room_with_pillar(
 
     grid = get_simple_room(rows, cols, exit_width=exit_width)
 
-    # Central pillar placement
-    mid_r = rows // 2
-    mid_c = cols // 2
+    # Pillar placement
+    if center is None:
+        mid_r = rows // 2
+        mid_c = cols // 2
+    else:
+        mid_r, mid_c = center
+
     half_p = pillar_size // 2
     r_start = mid_r - half_p
     r_end = r_start + pillar_size
     c_start = mid_c - half_p
     c_end = c_start + pillar_size
 
+    if r_start < 1 or r_end > rows - 1 or c_start < 1 or c_end > cols - 1:
+        raise ValueError(f"Pillar bounds [{r_start}:{r_end}, {c_start}:{c_end}] exceed room interior.")
+
     grid[r_start:r_end, c_start:c_end] = CELL_WALL
 
+    return grid
+
+
+def get_room_with_barrier(
+    rows: int = 20,
+    cols: int = 20,
+    exit_width: int = 2,
+    barrier_col: Optional[int] = None,
+    barrier_row_end: Optional[int] = None,
+) -> np.ndarray:
+    """
+    Creates a rectangular room with a vertical dividing barrier wall protruding downwards from
+    the top boundary, leaving a single passageway/chokepoint near the bottom.
+
+    Parameters:
+        rows, cols: Room dimensions (minimum 7x7).
+        exit_width: Width of the exit opening on the boundary.
+        barrier_col: Column index for the vertical barrier (defaults to mid column).
+        barrier_row_end: Ending row index for barrier (defaults to ~2/3 of room height, leaving bottom passage).
+
+    Returns:
+        grid: 2D numpy array representing the floor plan.
+    """
+    if rows < 7 or cols < 7:
+        raise ValueError("Room dimensions must be at least 7x7 for a barrier room.")
+
+    grid = get_simple_room(rows, cols, exit_width=exit_width)
+
+    if barrier_col is None:
+        barrier_col = cols // 2
+    if barrier_row_end is None:
+        barrier_row_end = max(2, int(rows * 0.65))
+
+    if not (1 < barrier_col < cols - 1):
+        raise ValueError(f"barrier_col {barrier_col} must be strictly inside the interior (1..{cols-2}).")
+    if not (1 <= barrier_row_end < rows - 2):
+        raise ValueError(f"barrier_row_end {barrier_row_end} must leave at least 2 walkable rows at bottom.")
+
+    grid[1:barrier_row_end + 1, barrier_col] = CELL_WALL
     return grid
 
 
