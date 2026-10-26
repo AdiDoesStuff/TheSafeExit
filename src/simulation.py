@@ -53,14 +53,27 @@ class EvacuationSimulation:
         initial_positions: Optional[Sequence[Tuple[int, int]]] = None,
         seed: Optional[int] = None,
         panic_enabled: bool = True,
+        panic_decay: float = 0.0,
     ):
+        floor_plan_arr = np.asarray(floor_plan)
+        if floor_plan_arr.ndim != 2:
+            raise ValueError("floor_plan must be a 2D array")
+        if isinstance(n_agents, bool) or not isinstance(n_agents, (int, np.integer)) or n_agents < 0:
+            raise ValueError("n_agents must be a non-negative integer")
+        for name, val in (("D", D), ("k", k), ("beta", beta), ("panic_decay", panic_decay)):
+            if not np.isfinite(val):
+                raise ValueError(f"{name} must be finite")
+            if val < 0:
+                raise ValueError(f"{name} must be non-negative")
+
         self.floor_plan = np.asarray(floor_plan, dtype=int)
         self.rows, self.cols = self.floor_plan.shape
-        self.n_agents = n_agents
+        self.n_agents = int(n_agents)
         self.D = D
         self.k = k
         self.beta = beta
         self.panic_enabled = panic_enabled
+        self.panic_decay = panic_decay
         self.rng = np.random.default_rng(seed)
 
         # 1. Geometry and Geodesic Distance Field
@@ -86,7 +99,7 @@ class EvacuationSimulation:
         )
 
         # 3. Engine C: Panic Contagion Field
-        self.panic_field = PanicField(self.floor_plan, D=self.D, k=self.k)
+        self.panic_field = PanicField(self.floor_plan, D=self.D, k=self.k, decay=self.panic_decay)
 
         # 4. Agent Initialization
         self.agent_states = np.zeros(self.n_agents, dtype=int)  # 0..n_transient-1, or -1 when absorbed
