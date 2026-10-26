@@ -61,6 +61,7 @@ class EvacuationSimulation:
         cell_size_m: float = 0.5,
         step_s: float = 0.4,
         max_moves_per_step: int = 2,
+        check_invariants: bool = False,
     ):
         floor_plan_arr = np.asarray(floor_plan)
         if floor_plan_arr.ndim != 2:
@@ -99,6 +100,7 @@ class EvacuationSimulation:
             raise ValueError("max_moves_per_step must be a positive integer")
         self.use_traits = bool(use_traits)
         self.traits = traits
+        self.check_invariants = bool(check_invariants)
         self.cell_size_m = float(cell_size_m)
         self.step_s = float(step_s)
         self.max_moves_per_step = int(max_moves_per_step)
@@ -246,6 +248,13 @@ class EvacuationSimulation:
             lam_t = np.zeros(self.n_transient, dtype=float)
             Q_t, R_t = self.Q_rational, self.R_rational
 
+        if self.check_invariants:
+            Qa = Q_t.toarray()
+            Ra = R_t.toarray()
+            rs = Qa.sum(axis=1) + Ra.sum(axis=1)
+            assert np.allclose(rs, 1.0, atol=1e-12), f"row-stochastic invariant violated at step {self.time_step + 1}"
+            assert np.all(Qa >= -1e-12) and np.all(Ra >= -1e-12), f"negative entry invariant violated at step {self.time_step + 1}"
+
         # 5. Snapshot Bottleneck Heatmap (Engine D: solve N_t frozen-chain diagnostic and immediately reduce to 2D)
         snapshot = None
         if record_snapshot:
@@ -277,7 +286,8 @@ class EvacuationSimulation:
             }
             # Note: raw N_t matrix is immediately released / garbage collected
 
-        # Determine number of moves per active agent this step
+        evacuated_this_step = 0
+        # Determine number of moves per active agent this step:
         active_list = list(active_indices)
         if self.use_traits:
             # update budgets for agents not delayed
@@ -299,6 +309,17 @@ class EvacuationSimulation:
             moves_remaining = {agent_idx: 1 for agent_idx in active_list}
 
         blocked_this_step = np.zeros((self.rows, self.cols), dtype=int)
+
+        # occupancy and exit counts persist across move rounds
+        _occ = None
+        _exitc = None
+        if self._capacity_enabled:
+            _occ = np.zeros(self.n_transient, dtype=int)
+            for agent_idx in active_list:
+                s = self.agent_states[agent_idx]
+                if s >= 0:
+                    _occ[s] += 1
+            _exitc = np.zeros(self.n_absorbing, dtype=int)
 
         # Helper to sample intended destination for one agent from a given state
         def sample_intended(state):
@@ -337,12 +358,8 @@ class EvacuationSimulation:
                 intended_map[agent_idx] = sample_intended(st)
 
             if self._capacity_enabled:
-                occupancy = np.zeros(self.n_transient, dtype=int)
-                for agent_idx in active_list:
-                    s = self.agent_states[agent_idx]
-                    if s >= 0:
-                        occupancy[s] += 1
-                exit_counts = np.zeros(self.n_absorbing, dtype=int)
+                occupancy = _occ
+                exit_counts = _exitc
                 perm = self.capacity_rng.permutation(len(round_candidates))
                 for idx_p in perm:
                     agent_idx = round_candidates[idx_p]
@@ -364,6 +381,7 @@ class EvacuationSimulation:
                             self.agent_states[agent_idx] = -1
                             self.evacuation_times[agent_idx] = self.time_step + 1
                             exit_counts[exit_idx] += 1
+                            evacuated_this_step += 1
                             occupancy[current_state] = max(0, occupancy[current_state] - 1)
                         else:
                             exit_coord = self.index_to_state[dest]
@@ -397,7 +415,24 @@ class EvacuationSimulation:
                     else:
                         self.agent_states[agent_idx] = -1
                         self.evacuation_times[agent_idx] = self.time_step + 1
+                        evacuated_this_step += 1
                     moves_remaining[agent_idx] -= 1
+
+        if self.check_invariants:
+            active = int(np.sum(self.agent_states >= 0))
+            evacuated = int(np.sum(self.agent_states == -1))
+            assert active + evacuated == self.n_agents, f"conservation invariant violated at step {self.time_step + 1}"
+            for s in self.agent_states:
+                if s >= 0:
+                    r, c = self.index_to_state[s]
+                    assert self.floor_plan[r, c] == CELL_WALKABLE, f"active on non-walkable invariant violated at step {self.time_step + 1}"
+            if self.cell_capacity is not None:
+                occ = np.zeros(self.n_transient, dtype=int)
+                for s in self.agent_states:
+                    if s >= 0:
+                        occ[s] += 1
+                assert np.all(occ <= self.cell_capacity), f"cell capacity invariant violated at step {self.time_step + 1}"
+            # exit capacity is enforced per exit cell during arbitration; no global assertion here
 
         self.time_step += 1
 
