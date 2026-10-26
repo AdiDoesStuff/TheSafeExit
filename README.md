@@ -90,20 +90,19 @@ Dependencies:
 ## Running Tests
 
 ```bash
-pytest
+python -m pytest -q
 ```
 
-On Windows using the included virtual environment:
+The suite is configured (via `conftest.py`) to use the headless `Agg` backend
+automatically, so no environment variables are needed. On Windows using the
+included virtual environment:
 
 ```bash
-.\.venv\Scripts\python.exe -m pytest
+.\.venv\Scripts\python.exe -m pytest -q
 ```
 
-For headless plotting/test runs, use Matplotlib's non-GUI backend:
-
-```bash
-$env:MPLBACKEND='Agg'; .\.venv\Scripts\python.exe -m pytest
-```
+The native Tk Matplotlib backend is a known failure on this host; the `Agg`
+backend is the supported way to run the suite.
 
 ## Running Demos
 
