@@ -9,7 +9,7 @@ At each timestep:
   2. Advance the panic PDE u_t = PanicField.step(rho_t).
   3. Form the transient mixing vector lambda_t = clip(beta * panic(r, c), 0, 1).
   4. Construct dynamic transition matrices (Q_t, R_t) = build_mixed_QR(...).
-  5. Optionally snapshot N_t = (I - Q_t)^(-1) via sparse LU solver.
+  5. Optionally snapshot N_t = (I - Q_t)^(-1) frozen-chain diagnostic via sparse LU solver.
   6. Discretely sample each active agent's next cell from the categorical
      distribution defined by row s of [Q_t | R_t].
   7. Absorb agents reaching exits and track evacuation times.
@@ -246,7 +246,7 @@ class EvacuationSimulation:
             lam_t = np.zeros(self.n_transient, dtype=float)
             Q_t, R_t = self.Q_rational, self.R_rational
 
-        # 5. Snapshot Bottleneck Heatmap (Engine D: solve N_t and immediately reduce to 2D)
+        # 5. Snapshot Bottleneck Heatmap (Engine D: solve N_t frozen-chain diagnostic and immediately reduce to 2D)
         snapshot = None
         if record_snapshot:
             N_t = fundamental_matrix_lu(Q_t)

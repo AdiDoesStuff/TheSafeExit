@@ -1,8 +1,8 @@
 """
 heatmap_sequence.py — Time-Evolving Bottleneck Heatmap Visualizations (Phase 3)
 
-Provides functions to analyze, visualize, and animate the dynamics of Markov
-fundamental matrix bottlenecks N_t = (I - Q_t)^(-1) as panic erodes rationality.
+Provides functions to analyze, visualize, and animate the dynamics of the frozen-chain
+diagnostic N_t = (I - Q_t)^(-1) (assumes Q_t never changes again) as panic erodes rationality.
 """
 
 from __future__ import annotations
@@ -176,7 +176,7 @@ def plot_heatmap_grid(
         axes[row, col].axis("off")
 
     fig.suptitle(
-        r"Time-Evolving Bottleneck Heatmap Sequence $N_t = (I - Q_t)^{-1}$",
+        r"Time-Evolving Frozen-Chain Diagnostic $N_t = (I - Q_t)^{-1}$",
         fontsize=14,
         fontweight="bold",
         y=1.002,

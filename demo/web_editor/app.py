@@ -431,6 +431,7 @@ def simulate():
             "vmax": round(float(vmax), 4),
             "panic_max": round(float(max_panic_seen), 4) if max_panic_seen > 0 else 1.0,
             "rational_J": round(float(rational_J), 4),
+            "n_t_semantics": "frozen-chain diagnostic, not a forecast",
             "n_agents_start": num_agents,
             "final_stats": {
                 "total_steps": sim_result["total_steps"],

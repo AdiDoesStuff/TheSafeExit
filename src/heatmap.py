@@ -127,4 +127,9 @@ def plot_heatmap(heatmap: np.ndarray,
     if save_path:
         fig.savefig(save_path, dpi=300, bbox_inches='tight')
 
+    try:
+        fig.text(0.5, 0.01, "uncalibrated, for comparing designs", ha="center", fontsize=8)
+    except Exception:
+        pass
+
     return fig, ax

@@ -1,6 +1,6 @@
 # TheSafeExit
 
-TheSafeExit is a stochastic crowd evacuation simulation project. It models a building as a grid, moves agents using absorbing Markov chains, spreads panic with a wall-aware diffusion model, and visualizes evacuation bottlenecks over time.
+TheSafeExit is a stochastic crowd evacuation simulation project. It models a building as a grid, moves agents using absorbing Markov chains, spreads panic with a wall-aware diffusion model, and visualizes evacuation bottlenecks over time. Uncalibrated, for comparing designs.
 
 The project is designed around the mathematics of evacuation rather than only animation. It combines graph search, probability, Markov chains, sparse linear algebra, numerical PDEs, stochastic simulation, and visualization.
 
@@ -154,7 +154,7 @@ where:
 lambda_t = clip(beta * panic, 0, 1)
 ```
 
-So `N_t = (I - Q_t)^(-1)` is treated as a frozen-time bottleneck snapshot.
+So `N_t = (I - Q_t)^(-1)` is a frozen-chain diagnostic: it assumes `Q_t` never changes again. Results are uncalibrated, for comparing designs.
 
 ## Phase 3 Additions
 

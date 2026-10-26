@@ -87,13 +87,13 @@ This document audits the TheSafeExit crowd evacuation simulation project against
 - **Web editor three-mode architecture:** The web editor now explicitly exposes three distinct modes, closing the gap where the interface previously only offered static Phase 2 boundary chains:
   1. *Rational Boundary Case ($\lambda=0$ limit)*: Pure geodesic shortest-path descent (static $Q_{rational}$).
   2. *Uniform Boundary Case ($\lambda=1$ limit)*: Pure unbiased random walk diffusion (static $Q_{uniform}$).
-  3. *Dynamic Panic-Coupled Simulation*: Full time-domain integration coupling agent density $\rho_t$, panic diffusion PDE $u(x,y,t)$, transient transition mixing $\lambda_t = \text{clip}(\beta u)$, and quasi-static fundamental matrix bottleneck sequence $N_t = (I - Q_t)^{-1}$.
+  3. *Dynamic Panic-Coupled Simulation*: Full time-domain integration coupling agent density $\rho_t$, panic diffusion PDE $u(x,y,t)$, transient transition mixing $\lambda_t = \text{clip}(\beta u)$, and a frozen-chain diagnostic $N_t = (I - Q_t)^{-1}$ (assumes $Q_t$ never changes again).
 - **Web editor dependencies:** `flask` and `flask-cors` added to `.venv` (not in `requirements.txt` — editor is an optional dev tool). Run `.venv\Scripts\pip install flask flask-cors` if needed.
 
 ---
 
 ## Project Roadmap Status
 
-All phases (Phases 1, 2, 3, 3b, 4, 5) and the **Web Editor Integration** are **100% COMPLETE**. The test suite has **36 passing unit tests** with full coverage across all engines, solvers, simulation loops, geometry generators, optimization pipelines, and panic coupling regression tests.
+Feature status (see docs/SCOPE_AND_CLAIMS.md): core engines and solvers implemented; test suite has 36 passing unit tests at audit time. Panic diffusion, Markov chains, and coupled simulation are implemented but uncalibrated, for comparing designs. N_t is a frozen-chain diagnostic, not a forecast.
 
 The interactive **Web Editor** (`demo/web_editor/`) now offers full first-class access to both static boundary analyses and the real-time dynamic panic-coupled PDE simulation. Users can draw custom floor plans, simulate panic feedback dynamics, scrub through time-series heatmaps, validate with Monte Carlo sampling, and optimize exit placement via gradient descent.
