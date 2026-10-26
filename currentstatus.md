@@ -12,7 +12,7 @@ panic-decay, capacity, trait, numerical-engine and experiment work.
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-- **Result:** 262 passed, 0 failed.
+- **Result:** 269 passed, 0 failed.
 - **Warning:** one pre-existing Matplotlib `PendingDeprecationWarning` from
   `cmap.set_bad` in `src/heatmap.py`; it does not affect results.
 - The suite runs headless through `conftest.py` (Agg backend), so no display is
@@ -85,20 +85,20 @@ The harness writes `environment.json`, `config.json`, `results.csv`,
 `results.md`, per-experiment CSV/PNG artefacts and a pre-registered question,
 method, expectation and failure criterion for each experiment.
 
-| ID | Scope | Headline result |
+| ID | Scope | Headline result (full run, `docs/RESULTS.md`) |
 |---|---|---|
-| E1 | exact fixed chain vs Monte Carlo | coverage and error slope recorded in `experiments/out/results.md` |
-| E2 | solver scaling | measured time, memory and residual at each size; dense `N` eventually skipped |
-| E3 | panic and capacity | paired T50/T90/T100 effects; frozen t=0 diagnostic is optimistic |
-| E4 | density sweep | T90 growth, descriptive knee, outlet queue map |
-| E5 | exhaustive vs BFGS exits | enumerated optimum checked; BFGS gap reported as measured |
-| E6 | traits on/off and correlation | paired effects, including null/small effects |
-| E7 | parameter robustness | Kendall tau of design rankings against the default ranking |
+| E1 | exact fixed chain vs Monte Carlo | coverage 90% / 97% / 97% at M = 10³ / 10⁴ / 10⁵; slope −0.48 |
+| E2 | solver scaling | 100×100 and 150×150 solved by sparse/CG/BiCGSTAB, residual < 1e-8; dense `N` skipped from 80×80 |
+| E3 | panic and capacity | simple layout T90 32 → 75 with panic (+43 steps); capacity adds 7.5 steps; frozen t=0 diagnostic optimistic by 6.3 steps |
+| E4 | density sweep | T90 69 → 386.5 steps (5% → 60%); outlet queue peak one cell from the choke; smooth curve, no sharp knee |
+| E5 | exhaustive vs BFGS exits | enumerated optimum verified on all grids; BFGS gap 0 on 5 small grids; stage-2 changes ≤ 1 step; tau 0.76 |
+| E6 | traits on/off and correlation | T90 +1 to +2 steps (2–4.5%); truncation 1–2 of ~4,800 draws; small effect, reported as such |
+| E7 | parameter robustness | all six parameters change the ranking at some value; minimum tau 0.55 (γ and capacity) |
 
-The canonical numbers are in `experiments/out/results.md` and its CSVs, written
-beside the git commit and library versions. The quick configuration is a smoke
-test only and is not evidence for a trend. See `docs/EXPERIMENTS.md` for how to
-read each output.
+The canonical numbers are in `docs/RESULTS.md`, with the raw tables in
+`experiments/out/results.md` and its CSVs, written beside the git commit and
+library versions. The quick configuration is a smoke test only and is not
+evidence for a trend. See `docs/EXPERIMENTS.md` for how to read each output.
 
 ## What the project does not claim
 
