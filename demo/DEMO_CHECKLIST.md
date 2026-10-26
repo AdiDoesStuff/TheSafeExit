@@ -102,7 +102,7 @@ contrast random-walk times with rational times.
 
 ## If something breaks
 
-- Editor will not start: run `demo\web_editor\launch_editor.bat`; check `.venv`.
+- Editor will not start: run `.venv\Scripts\python.exe demo\web_editor\app.py`; check `.venv`.
 - No plots: `.venv\Scripts\python.exe demo\showcase.py`, or
   `experiments\run_all.py --quick` (about 6 min).
 - Port 5050 busy: close the old "TheSafeExit Web Editor" window, then restart.

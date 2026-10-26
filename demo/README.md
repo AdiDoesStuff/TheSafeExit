@@ -40,8 +40,8 @@ editor window first if you want a fresh one.
 .venv\Scripts\python.exe demo\web_editor\app.py
 ```
 
-or `demo\web_editor\launch_editor.bat`. Both serve the same page on
-`127.0.0.1:5050`.
+Both start the same server on `127.0.0.1:5050`; the launcher just waits for
+it to answer and opens the browser.
 
 ### Requirements
 
