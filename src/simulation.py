@@ -54,6 +54,8 @@ class EvacuationSimulation:
         seed: Optional[int] = None,
         panic_enabled: bool = True,
         panic_decay: float = 0.0,
+        cell_capacity: Optional[int] = None,
+        exit_capacity: Optional[int] = None,
     ):
         floor_plan_arr = np.asarray(floor_plan)
         if floor_plan_arr.ndim != 2:
@@ -74,7 +76,20 @@ class EvacuationSimulation:
         self.beta = beta
         self.panic_enabled = panic_enabled
         self.panic_decay = panic_decay
+        self.cell_capacity = cell_capacity
+        self.exit_capacity = exit_capacity
+        if cell_capacity is not None:
+            if isinstance(cell_capacity, bool) or not isinstance(cell_capacity, (int, np.integer)) or cell_capacity < 0:
+                raise ValueError("cell_capacity must be a non-negative integer or None")
+            self.cell_capacity = int(cell_capacity)
+        if exit_capacity is not None:
+            if isinstance(exit_capacity, bool) or not isinstance(exit_capacity, (int, np.integer)) or exit_capacity < 0:
+                raise ValueError("exit_capacity must be a non-negative integer or None")
+            self.exit_capacity = int(exit_capacity)
         self.rng = np.random.default_rng(seed)
+        # capacity rng created only when capacity enabled
+        self._capacity_enabled = (self.cell_capacity is not None) or (self.exit_capacity is not None)
+        self.capacity_rng = np.random.default_rng([seed, 1]) if self._capacity_enabled else None
 
         # 1. Geometry and Geodesic Distance Field
         self.distance_field = compute_exit_distance_field(self.floor_plan)
@@ -115,14 +130,28 @@ class EvacuationSimulation:
                 if (r, c) not in self.state_map or self.state_map[(r, c)] >= self.n_transient:
                     raise ValueError(f"Position ({r, c}) is not a valid transient walkable cell.")
                 self.agent_states[idx] = self.state_map[(r, c)]
+            if self.cell_capacity is not None:
+                counts = np.zeros(self.n_transient, dtype=int)
+                for s in self.agent_states:
+                    counts[s] += 1
+                if np.any(counts > self.cell_capacity):
+                    raise ValueError("Initial placement exceeds cell_capacity.")
         else:
-            # Uniformly place agents across available transient cells
-            self.agent_states = self.rng.choice(self.n_transient, size=self.n_agents)
+            if self.cell_capacity is None or self.cell_capacity >= self.n_agents:
+                self.agent_states = self.rng.choice(self.n_transient, size=self.n_agents)
+            else:
+                slots = np.repeat(np.arange(self.n_transient), self.cell_capacity)
+                if self.n_agents > len(slots):
+                    raise ValueError("n_agents exceeds cell_capacity * n_transient.")
+                chosen = self.rng.choice(len(slots), size=self.n_agents, replace=False)
+                self.agent_states = slots[chosen].astype(int)
 
         # Pre-extract transient state coordinates for fast panic vector extraction
         self._transient_coords = [self.index_to_state[i] for i in range(self.n_transient)]
         self._transient_rows = np.array([r for r, c in self._transient_coords], dtype=int)
         self._transient_cols = np.array([c for r, c in self._transient_coords], dtype=int)
+
+        self.blocked_counts = np.zeros((self.rows, self.cols), dtype=int)
 
     def get_active_agent_coords(self) -> np.ndarray:
         """Returns (M, 2) array of (row, col) coordinates for currently active (un-evacuated) agents."""
@@ -154,6 +183,7 @@ class EvacuationSimulation:
                 "max_panic": 0.0,
                 "mean_lambda": 0.0,
                 "snapshot": None,
+                "blocked_this_step": np.zeros((self.rows, self.cols), dtype=int),
             }
 
         if self.panic_enabled:
@@ -208,31 +238,28 @@ class EvacuationSimulation:
             }
             # Note: raw N_t matrix is immediately released / garbage collected
 
-        # 6. Discretely sample each active agent's next cell
-        for agent_idx in active_indices:
+        # 6. Sample each active agent's intended destination (same generator/order/draws)
+        active_list = list(active_indices)
+        intended = np.empty(len(active_list), dtype=int)
+        for pos, agent_idx in enumerate(active_list):
             current_state = self.agent_states[agent_idx]
 
-            # Extract transition probabilities for current transient state
-            # Concatenated [Q_t[s, :] | R_t[s, :]] of length (n_transient + n_absorbing)
             q_row = Q_t.getrow(current_state)
             r_row = R_t.getrow(current_state)
 
             cand_indices = []
             cand_probs = []
 
-            # Non-zero transient destinations (0 .. n_transient - 1)
             for j, p in zip(q_row.indices, q_row.data):
                 if p > 0:
                     cand_indices.append(j)
                     cand_probs.append(p)
 
-            # Non-zero absorbing exit destinations (n_transient .. n_transient + n_absorbing - 1)
             for k, p in zip(r_row.indices, r_row.data):
                 if p > 0:
                     cand_indices.append(self.n_transient + k)
                     cand_probs.append(p)
 
-            # Normalize probabilities to avoid floating point sum drift
             cand_probs = np.array(cand_probs, dtype=np.float64)
             prob_sum = cand_probs.sum()
             if prob_sum > 0:
@@ -240,15 +267,72 @@ class EvacuationSimulation:
             else:
                 cand_probs = np.ones(len(cand_indices)) / len(cand_indices)
 
-            next_state = self.rng.choice(cand_indices, p=cand_probs)
+            intended[pos] = self.rng.choice(cand_indices, p=cand_probs)
 
-            if next_state < self.n_transient:
-                # Agent moves to transient cell
-                self.agent_states[agent_idx] = next_state
-            else:
-                # Agent stepped into an exit (absorbing state)
-                self.agent_states[agent_idx] = -1
-                self.evacuation_times[agent_idx] = self.time_step + 1
+        # Capacity arbitration (only when enabled)
+        blocked_this_step = np.zeros((self.rows, self.cols), dtype=int)
+        if self._capacity_enabled:
+            occupancy = np.zeros(self.n_transient, dtype=int)
+            for agent_idx in active_list:
+                s = self.agent_states[agent_idx]
+                if s >= 0:
+                    occupancy[s] += 1
+
+            exit_counts = np.zeros(self.n_absorbing, dtype=int)
+
+            # random permutation of active agents
+            perm = self.capacity_rng.permutation(len(active_list))
+
+            for p in perm:
+                agent_idx = active_list[p]
+                current_state = self.agent_states[agent_idx]
+                if current_state < 0:
+                    continue
+                dest = int(intended[p])
+
+                if dest == current_state:
+                    # stays
+                    continue
+                if dest >= self.n_transient:
+                    # exit destination
+                    exit_idx = dest - self.n_transient
+                    accept = True
+                    if self.exit_capacity is not None:
+                        if exit_counts[exit_idx] >= self.exit_capacity:
+                            accept = False
+                    if accept:
+                        self.agent_states[agent_idx] = -1
+                        self.evacuation_times[agent_idx] = self.time_step + 1
+                        exit_counts[exit_idx] += 1
+                        occupancy[current_state] = max(0, occupancy[current_state] - 1)
+                    else:
+                        # refused: stays
+                        exit_coord = self.index_to_state[dest]
+                        blocked_this_step[exit_coord] += 1
+                        self.blocked_counts[exit_coord] += 1
+                else:
+                    # transient destination
+                    accept = True
+                    if self.cell_capacity is not None:
+                        if occupancy[dest] >= self.cell_capacity:
+                            accept = False
+                    if accept:
+                        occupancy[current_state] = max(0, occupancy[current_state] - 1)
+                        occupancy[dest] += 1
+                        self.agent_states[agent_idx] = dest
+                    else:
+                        # refused: stays
+                        blocked_this_step[self.index_to_state[dest]] += 1
+                        self.blocked_counts[self.index_to_state[dest]] += 1
+        else:
+            # No capacity: apply intended moves directly (baseline behaviour)
+            for pos, agent_idx in enumerate(active_list):
+                next_state = int(intended[pos])
+                if next_state < self.n_transient:
+                    self.agent_states[agent_idx] = next_state
+                else:
+                    self.agent_states[agent_idx] = -1
+                    self.evacuation_times[agent_idx] = self.time_step + 1
 
         self.time_step += 1
 
@@ -260,6 +344,7 @@ class EvacuationSimulation:
             "max_panic": float(np.max(panic_vec)),
             "mean_lambda": float(np.mean(lam_t)),
             "snapshot": snapshot,
+            "blocked_this_step": blocked_this_step,
         }
 
     def run(
@@ -321,4 +406,5 @@ class EvacuationSimulation:
             "history": history,
             "snapshots": snapshots,
             "agent_position_history": agent_position_history,
+            "blocked_counts": self.blocked_counts.copy(),
         }
