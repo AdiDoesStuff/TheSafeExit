@@ -1,0 +1,2 @@
+SEEDS = list(range(1000, 1200))
+DEFAULT_MAX_STEPS = 600
