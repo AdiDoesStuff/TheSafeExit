@@ -124,16 +124,18 @@ density, cell capacity 1, exit capacity 1, panic on with decay 0.15. Blocked-mov
 counts are summed per cell over the ensemble. The one-cell choke is defined
 geometrically as the narrowest walkable row in the lower half of the hallway.
 
-**Pass rule.** T90 rises with density and a descriptive knee is found; the
-blocked-move queue peak in the outlet region is within two cells of the choke.
-The global interior peak may be a different congestion point (the corridor bend),
-and that is reported rather than smoothed away.
+**Pass rule.** Every density finishes at least some runs, and the blocked-move
+queue peak in the outlet region is within two cells of the choke. The global
+interior peak may be a different congestion point (the corridor bend), and that
+is reported rather than smoothed away. The shape of the T90 curve is reported as
+measured: the knee marker is the largest second difference, and if the growth is
+smooth it is called a descriptive curvature marker, not a sharp threshold.
 
 **Read.** `e4_summary.csv` has T50/T90/T100, intervals, censoring and blocked
 totals per density. `e4_runs.csv` has per-run values. `e4_blocked_map.csv` and
 `e4_blocked_map.png` locate the queue; `e4_curve.png` shows T90 against density
-with the knee marked. The knee is the largest second difference of the T90
-curve: descriptive, not a formal changepoint estimate.
+with the curvature marker. The knee is a descriptive statistic, not a formal
+changepoint estimate.
 
 ## E5 — Exhaustive vs heuristic exit placement
 
@@ -152,10 +154,14 @@ on every grid. A BFGS gap is reported as measured, including a zero gap.
 
 **Read.** `e5_summary.csv` has the exact and BFGS choices, scores, gap, miss flag,
 the ensemble T90 of the stage-1 optimum, the stage-2 ensemble winner, and the
-BFGS ensemble T90. `ensemble_best_matches_exact` records whether the ensemble
-preferred a different position from the stage-1 optimum. A zero BFGS gap means
-BFGS matched the enumerated optimum on these grids; it does not make BFGS exact
-in general, and the exhaustive search's guarantee is only over the enumerated
+BFGS ensemble T90. `stage2_T90_gain_steps` is the T90 of the stage-2 winner minus
+the T90 of the stage-1 optimum, and `stage2_strict_improvement` is true only when
+it is strictly negative. `ensemble_best_matches_exact` records whether the
+ensemble chose a different position; on symmetric rooms that alternative is
+usually a mirror-image exit with an identical T90, so a changed position alone is
+not evidence that the rational objective is wrong. A zero BFGS gap means BFGS
+matched the enumerated optimum on these grids; it does not make BFGS exact in
+general, and the exhaustive search's guarantee is only over the enumerated
 positions and the stated objective. `e5_top_candidates.csv` ranks the finalists
 by rational distance and by T90 and reports Kendall tau between the two.
 

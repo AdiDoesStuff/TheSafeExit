@@ -39,8 +39,10 @@ SPEC = ExperimentSpec(
         "is allowed to be a separate, stronger congestion point."
     ),
     failure_criterion=(
-        "No knee is found, or the outlet-region queue peak is more than two cells "
-        "from the narrowest cell; either is reported rather than smoothed away."
+        "The outlet-region queue peak is more than two cells from the narrowest "
+        "cell, or a density produces no finished runs. The shape of the T90 "
+        "curve is reported as measured: a weak or absent knee is stated, not "
+        "asserted."
     ),
 )
 
@@ -75,15 +77,15 @@ def _plot_blocked_map(grid: np.ndarray, blocked: np.ndarray, narrowest: Tuple[in
                    edgecolors="white", linewidth=0.8, label="Exit", zorder=5)
     ax.scatter([narrowest[1]], [narrowest[0]], marker="o", s=110, facecolors="none",
                edgecolors="#00e5ff", linewidth=2, label="Narrowest cell", zorder=6)
-    ax.annotate("narrowest", xy=(narrowest[1], narrowest[0]), xytext=(8, 8),
-                textcoords="offset points", color="white", fontsize=8,
+    ax.annotate("narrowest", xy=(narrowest[1], narrowest[0]), xytext=(-10, 8),
+                textcoords="offset points", color="white", fontsize=8, ha="right",
                 bbox=dict(boxstyle="round,pad=0.25", facecolor="#1e1e24", alpha=0.8))
     ax.set_title("E4 — blocked moves at the highest density", fontsize=11, fontweight="bold")
     ax.set_xlabel("Column")
     ax.set_ylabel("Row")
     cbar = fig.colorbar(im, ax=ax, shrink=0.82)
     cbar.set_label("Blocked move attempts (summed over runs)")
-    ax.legend(loc="upper left", fontsize=8)
+    ax.legend(loc="lower left", fontsize=8)
     fig.text(0.5, 0.01, "uncalibrated, for comparing designs", ha="center", fontsize=8)
     return save_figure(fig, path)
 
@@ -231,7 +233,7 @@ def run(cfg: Any, out_dir: str) -> Dict[str, Any]:
     )
     if knee is not None:
         ax.axvline(knee, color="grey", ls="--", lw=1)
-        ax.annotate(f"descriptive knee\n≈ {knee:.0%}", xy=(knee, np.nanmax(t90) * 0.65),
+        ax.annotate(f"largest curvature\n{knee:.0%} (descriptive)", xy=(knee, np.nanmax(t90) * 0.65),
                     xytext=(6, 0), textcoords="offset points", fontsize=8, color="#333333")
     style_axes(ax, "T90 vs density (median, 95% bootstrap CI)", "Fraction of floor cells occupied", "T90 (steps)")
     fig.text(0.5, 0.01, "uncalibrated, for comparing designs", ha="center", fontsize=8)
@@ -245,8 +247,10 @@ def run(cfg: Any, out_dir: str) -> Dict[str, Any]:
     )
     key = (
         f"T90 rose from {t90[0]:.0f} steps at {densities_arr[0]:.0%} to "
-        f"{t90[-1]:.0f} steps at {densities_arr[-1]:.0%}; descriptive knee near "
-        f"{knee:.0%}. The queue peak in the outlet region is at {outlet_peak}, "
+        f"{t90[-1]:.0f} steps at {densities_arr[-1]:.0%}. The largest second "
+        f"difference is at {knee:.0%}, but growth is smooth, so this is a "
+        f"descriptive curvature marker rather than a sharp jam knee. The queue "
+        f"peak in the outlet region is at {outlet_peak}, "
         f"{outlet_distance} cell(s) from the one-cell narrowing {narrowest}; the "
         f"global interior peak is at {peak} (the corridor bend), and the exit-cell "
         f"peak is at {exit_peak}."

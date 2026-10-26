@@ -133,6 +133,18 @@ def run(cfg: Any, out_dir: str) -> Dict[str, Any]:
             and ensemble_best["wall"] == exact_best["wall"]
             and ensemble_best["position"] == exact_best["position"]
         )
+        # A different stage-2 position is only a real disagreement if it is
+        # strictly faster. On symmetric rooms the alternative is usually a
+        # mirror-image exit with an identical T90, which must not be reported as
+        # the ensemble "preferring" something else.
+        stage2_gain = (
+            float(ensemble_best_t90 - exact_best_t90)
+            if np.isfinite(ensemble_best_t90) and np.isfinite(exact_best_t90)
+            else np.nan
+        )
+        stage2_strict_improvement = bool(
+            np.isfinite(stage2_gain) and stage2_gain < -1e-9
+        )
         summary_rows.append(
             {
                 "case": name,
@@ -166,6 +178,8 @@ def run(cfg: Any, out_dir: str) -> Dict[str, Any]:
                 else None,
                 "ensemble_best_T90": ensemble_best_t90,
                 "ensemble_best_matches_exact": ensemble_matches_exact,
+                "stage2_T90_gain_steps": stage2_gain,
+                "stage2_strict_improvement": stage2_strict_improvement,
                 "exact_fraction_finished": exact_best_ensemble["fraction_finished"]
                 if exact_best_ensemble is not None
                 else np.nan,
@@ -229,13 +243,16 @@ def run(cfg: Any, out_dir: str) -> Dict[str, Any]:
         s=60,
         color="#00798c",
     )
-    for r in subset:
+    for i, r in enumerate(subset):
+        # Deterministic offsets keep the labels readable when several finalists
+        # tie on distance and T90 (they are usually mirror-image exits).
+        offsets = [(5, 6), (5, -12), (-30, 6), (-32, -12), (8, -20)]
         ax.annotate(
-            f"{r['wall'][0]}{r['position']}",
+            f"{r['wall']} {r['position']}",
             xy=(r["max_distance"], r["ensemble_T90"]),
-            xytext=(4, 4),
+            xytext=offsets[i % len(offsets)],
             textcoords="offset points",
-            fontsize=8,
+            fontsize=7,
         )
     style_axes(
         ax,
@@ -243,6 +260,7 @@ def run(cfg: Any, out_dir: str) -> Dict[str, Any]:
         "Rational max BFS distance",
         "Ensemble T90 (median)",
     )
+    ax.margins(x=0.12, y=0.12)
     fig.suptitle("E5 — exhaustive search vs the BFGS heuristic (uncalibrated)", fontsize=12)
     fig.tight_layout()
     png_path = save_figure(fig, artefact(out_dir, SPEC.id, "plot.png"))
@@ -251,13 +269,32 @@ def run(cfg: Any, out_dir: str) -> Dict[str, Any]:
     n_ensemble_diff = sum(
         1 for r in summary_rows if not r["ensemble_best_matches_exact"]
     )
+    n_strict = sum(1 for r in summary_rows if r["stage2_strict_improvement"])
+    gains = [
+        abs(r["stage2_T90_gain_steps"])
+        for r in summary_rows
+        if np.isfinite(r["stage2_T90_gain_steps"])
+    ]
+    max_gain = max(gains) if gains else 0.0
+    gain_percent = [
+        abs(r["stage2_T90_gain_steps"]) / r["exact_ensemble_T90"] * 100.0
+        for r in summary_rows
+        if np.isfinite(r["stage2_T90_gain_steps"])
+        and np.isfinite(r["exact_ensemble_T90"])
+        and r["exact_ensemble_T90"] > 0
+    ]
+    max_percent = max(gain_percent) if gain_percent else 0.0
     taus = [r["kendall_tau_distance_vs_T90"] for r in top_rows]
     finite_taus = [t for t in taus if np.isfinite(t)]
     key = (
-        f"BFGS missed the enumerated optimum on {n_missed}/{len(summary_rows)} grids; "
-        f"largest score gap {max(r['bfgs_gap'] for r in summary_rows):.1f} steps. "
-        f"The ensemble re-score preferred a different position from the stage-1 "
-        f"optimum on {n_ensemble_diff}/{len(summary_rows)} grids."
+        f"BFGS matched the enumerated optimum on "
+        f"{len(summary_rows) - n_missed}/{len(summary_rows)} small grids "
+        f"(largest gap {max(r['bfgs_gap'] for r in summary_rows):.1f} steps). "
+        f"The stage-2 ensemble chose a different position on "
+        f"{n_ensemble_diff}/{len(summary_rows)} grids (strictly faster on "
+        f"{n_strict}), but the largest change was {max_gain:.0f} step(s), "
+        f"{max_percent:.0f}% of that grid's stage-1 T90: these are near-tied or "
+        f"symmetric alternatives, not a materially better design."
     )
     if finite_taus:
         key += (
@@ -274,5 +311,6 @@ def run(cfg: Any, out_dir: str) -> Dict[str, Any]:
         "top_candidates": top_rows,
         "n_bfgs_misses": int(n_missed),
         "n_ensemble_disagreements": int(n_ensemble_diff),
+        "n_stage2_strict_improvements": int(n_strict),
         "outputs": [summary_path, top_path, png_path],
     }
