@@ -239,7 +239,7 @@ than tuned away.
 ## Reproducing
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q                 # 269 passed
+.\.venv\Scripts\python.exe -m pytest -q                 # 283 passed today; 269 at this run's commit
 .\.venv\Scripts\python.exe experiments\run_all.py       # ~16 min, writes experiments\out\
 .\.venv\Scripts\python.exe experiments\run_all.py --quick   # ~6 min smoke configuration
 ```

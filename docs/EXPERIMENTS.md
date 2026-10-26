@@ -34,6 +34,12 @@ Outputs are written to `experiments/out/`:
 The quick configuration exists only to prove the harness works. Its intervals
 are wide and its run counts are small; do not treat it as evidence for a trend.
 
+For a short demo, `.venv\Scripts\python.exe demo\showcase.py` reproduces four of
+these results at reduced size — one sparse hallway solve, the exhaustive-vs-BFGS
+exit search, a panic on/off ensemble and a density sweep. It prints the numbers
+and writes four PNGs to `experiments/out/showcase/` in under a minute, without
+touching the canonical outputs above.
+
 ## Seeds and randomness
 
 The seed list is explicit: `SEEDS = range(1000, 1200)` in `experiments/config.py`.

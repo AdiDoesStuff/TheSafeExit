@@ -2,65 +2,64 @@
 
 Oct 26, 2026 · Aditya Vineeth, Krishiv S Iyer, Sibi Chakravarthi, Siddharth Maddali
 
-## Tonight's plan: deadline 12 a.m. (read this first)
+## Status: Phases 0–3 complete; demo packaged
 
-We have one evening, so we do the 17.5-day plan in its smallest honest form: reword every claim first, then build only what finishes. Everything after this section is the full plan, kept for the report and for later.
+As of 2026-10-27 the engineering and evidence phases are finished, and the
+project has a one-click demo. What remains is presentation (slides, report,
+viva), not modelling.
 
-**Assumptions (correct me if wrong).** We start about 7 hours before midnight, all four of us are working, and the deliverable is slides plus a viva or short report. Times below are hours from our start (H0). If we have fewer than 5 hours, do Tier A only.
+- **Tests:** 283 passed, headless, no flags (14 of them exercise the web-editor
+  endpoints and skip only when Flask is absent).
+- **Experiments:** the full E1–E7 run finished 7/7 `ok` with every
+  pre-registered criterion met; the numbers are in `docs/RESULTS.md`.
+- **Phases:** 0 (baseline), 1 (engines), 2 (numerics and optimiser) and 3
+  (experiments) are complete. All 13 gap items in Section 2 are closed.
+- **Demo packaging:** `demo/run_demo.bat`, `demo/showcase.py`, the upgraded web
+  editor and its endpoint tests are in place (this is Phase 4.3).
 
-### What we will and will not deliver tonight
+### What was delivered
 
-| Tier | What | Why this tier | Rule |
-| --- | --- | --- | --- |
-| A: must | Reworded slides plus a limitations slide; tagged baseline with 36 tests passing; fixed-chain Monte Carlo check (E1); ensemble runner (T50, T90, T100, censoring flag) | Mostly wording and short scripts on code that already works; removes every claim we cannot defend | Done before any Tier B work starts |
-| B: should | Panic decay term; traits wired into the simulation; experiment E3 (panic on vs off, ensemble); sparse expected-time solve with a 100x100 timing | Makes two promised engines real and gives us real numbers for the slides | Each has an off switch that reproduces the baseline |
-| C: stretch | Capacity (one agent per cell) with a blocked-move map | Needed for "panic causes clustering" and a true bottleneck map, but it touches the core loop | Hard gate at H4: if it does not pass its tests, drop it and use the fallback wording |
-| Cut tonight | CG and BiCGSTAB, exact exit search, E2, E4 to E7, web editor update | Not enough time to build and test | Slides say "LU and SVD" and call exit placement a heuristic |
+| Tier | Original scope | Status |
+| --- | --- | --- |
+| A: must | Baseline tag, fixed-chain Monte Carlo check, ensemble runner with T50/T90/T100 and censoring | Done |
+| B: should | Panic decay, traits wired into the simulation, E3, sparse expected-time solve with a 100×100 timing | Done |
+| C: stretch | Capacity (one agent per cell) with a blocked-move map | Done — the gate passed: no cell exceeds capacity, agent count is conserved, infinite capacity reproduces the baseline |
+| Demo | One-click launcher, showcase script, editor upgrade (scenario controls, compare, numerics, exact-vs-BFGS, ensemble endpoint) | Done |
 
-### Who does what, in order
+Everything that was once cut — CG and BiCGSTAB, exact exit search, E2, E4–E7,
+the web editor update — is now implemented and tested.
 
-| Window | Person | Task | Done when |
-| --- | --- | --- | --- |
-| H0 to H0.5 | Aditya | Commit the current changes on a branch, tag it `baseline-2026-10-26`, set `MPLBACKEND=Agg`, run `pytest -q` | 36 passed; tag exists; everyone pulls it |
-| H0 to H1.5 | Krishiv | Rewrite the slides with the Section 8 table: no "predicts", no "fatal", fixed-chain validation, frozen-chain diagnostic, Σ links speed and reaction time, "LU / SVD" only | Every changed slide matches the ledger |
-| H0 to H1 | Siddharth | E1: compare exact row sums with Monte Carlo (M = 1e3, 1e4, 1e5) on both slide layouts for about 10 start cells | One CSV and one plot; the exact value is inside the 95% interval for most cells |
-| H0.5 to H2 | Aditya | `ensemble.py`: 100 fixed seeds, T50, T90, T100 per run, medians with bootstrap interval, fraction finished by `max_steps` | Same seeds give identical output; a cut-off run is flagged, never averaged in as finished |
-| H1.5 to H2.5 | Krishiv | Panic decay: add −γu to the update, γ = 0 by default | With γ = 0 the old tests still pass; with no agents panic falls toward zero |
-| H1 to H3 | Sibi | Traits: reaction time becomes a start delay, speed becomes a move budget (cell 0.5 m, step 0.4 s, speed truncated to \[0.3, 2.0\] m/s); off by default | Traits off reproduces the baseline; no agent moves before its delay |
-| H1 to H2 | Siddharth | Sparse expected-time solve `spsolve(I−Q, 1)` and a timing at 100x100 | Residual below 1e-8; the measured time goes on the slide, and only that feasibility claim is kept |
-| H2 to H4 | Aditya | Capacity: cell holds at most one agent, random order each step, blocked agents stay, blocked-move count per cell | Gate at H4 (below) |
-| H2.5 to H4 | Krishiv | Merge decay, then traits (in that order) into `main`; fix conflicts; run the suite | Suite green on `main` |
-| H3 to H4 | Sibi | Draft the report skeleton: method, validation, results placeholders, limitations | Headings and limitations text written |
-| H4 | All | **Gate:** capacity either passes (no cell over capacity, agent count conserved, infinite capacity reproduces baseline) or is dropped | Decision made out loud, once |
-| H4 to H5.5 | Siddharth, Krishiv | E3: both layouts, panic on and off (and capacity on if it passed), 100 seeds each, same seeds across settings | CSV and a figure with T50, T90, T100 and intervals |
-| H4 to H5.5 | Sibi | If capacity passed: blocked-move map plus a one-line check that a narrowed corridor shows the highest count at the narrowing. If not: rename the row-sum map "time to exit" everywhere | Map or rename committed |
-| H5.5 to H6.5 | Krishiv, Sibi | Paste results into slides and report; write each result as measured, including null results | Every number on a slide comes from a CSV |
-| H6 to H7 | Siddharth, Aditya | Fresh clone, install, `pytest -q`, rerun E1 and E3 scripts; write the environment (Python, NumPy, SciPy, commit) beside the outputs | Fresh clone reproduces the files; tag `final` |
-| Last 30 min | All | Rehearse the viva answers for what we actually built (below) | Each person can explain one other person's part |
+### How to demo
 
-Merge order is fixed to avoid conflicts in `simulation.py`: panic decay first, traits second, capacity last, each rebased on `main`.
+| Command | Result |
+| --- | --- |
+| `demo\run_demo.bat` | Starts the Flask editor, waits for it, opens <http://127.0.0.1:5050> |
+| `.venv\Scripts\python.exe demo\showcase.py` | Prints the headline numbers and writes four plots to `experiments/out/showcase/` in under a minute |
+| `.venv\Scripts\python.exe experiments\run_all.py --quick` | Regenerates the experiment evidence (smoke configuration) |
 
-### Fallback wording if capacity is dropped
+In the editor: **Analyze** shows the residual and solve time; **Monte Carlo**
+compares sampling with the exact value; **Optimize** shows the exhaustive
+optimum beside BFGS; **Simulate Panic** shows T50/T90/T100 and blocked moves;
+**Compare** shows the panic on/off ensemble difference. The scenario panel
+controls decay, capacity and traits. Full walkthrough: `demo/README.md`.
 
-- Slide 7 becomes: "Panic randomises movement; this model has no collisions or capacity, so it cannot show jams."
-- The bottleneck output is called "time to exit" and "expected visits", never "fatal bottlenecks".
-- The limitations slide adds: "No capacity model; blocking is future work."
-
-### Viva answers we must be able to give tonight
+### Viva answers we must be able to give
 
 - Exits are absorbing because once an agent leaves it never re-enters; the absorbing block is the identity.
 - A row of N sums to expected steps to exit, because N counts expected visits to each state before absorption.
 - N at a given step is a frozen-chain diagnostic, not a forecast, because the real Q changes at every step.
-- Traits now change who starts late and who moves faster (if Sibi's task passed); otherwise we say plainly they are a sampler only.
+- Traits change who starts late and who moves faster, and the effect is small (+1 to +2 steps in E6) — reported as small.
 - We have not calibrated or validated against real evacuations, so we claim comparisons, not predictions.
 
 ### Submit-ready checklist
 
-- [ ] `pytest -q` passes on a fresh clone with no flags.
-- [ ] E1 and E3 outputs regenerate from one script with the environment file beside them.
-- [ ] No slide says "predicts", "fatal", "validated" (unqualified), "CG", or "100x100 feasible" without a measurement behind it.
-- [ ] Limitations slide present.
-- [ ] Tag `final` pushed; everyone has the same copy.
+- [x] `pytest -q` passes on a fresh clone with no flags.
+- [x] E1 and E3 outputs regenerate from one script with the environment file beside them.
+- [x] No document says "predicts", "fatal", "validated" (unqualified), or claims "100×100 feasible" without a measurement behind it.
+- [x] Limitations section present in the README and the claims ledger.
+- [ ] Slides rebuilt from E1–E7 outputs, with the limitations slide (Phase 4.1).
+- [ ] Report written (Phase 4.2) and viva rehearsed (Phase 4.4).
+- [ ] Tag `final` pushed; everyone has the same copy (Phase 4.5).
 
 ## 1. Bottom line
 
@@ -70,7 +69,7 @@ Delivering what the slides promise takes about 17.5 person-days in five phases. 
 
 **What we will not claim.** That it predicts real evacuation times, that it is calibrated or validated against drill data, that it shows where people would die, or that it replaces field-validated tools. Every output is labelled "uncalibrated, for comparing designs".
 
-**Basis.** This plan rests on the audit dated 2026-10-26 (36 tests pass under the headless Agg backend) and the project slides. Line-level claims are the audit's; the code has not been re-run for this plan. Effort figures are estimates, plus or minus 30%, and assume the team can already read the code.
+**Basis.** This plan began from the audit dated 2026-10-26, when 36 tests passed under the headless Agg backend. Phases 0–3 have since been executed and verified: 283 tests pass and the full E1–E7 run is recorded in `docs/RESULTS.md`. The effort figures below are the original estimates, kept for the record.
 
 | Phase | Person-days | What it produces |
 | --- | --- | --- |
@@ -83,27 +82,27 @@ Delivering what the slides promise takes about 17.5 person-days in five phases. 
 
 Phases 0 to 2 (9.5 person-days) are the engineering core. With four people in parallel the critical path is about 8 working days, because capacity must land before experiments, and the write-up cannot be finished before the experiments.
 
-**Open question.** The deadline and the form of the deliverable (viva, report, slides, live demo) are not known. Section 9 gives cut orders for 5, 8 and 10 or more working days.
+**Deadline and deliverable.** Resolved for now: the immediate deliverable is a live demo (web editor plus showcase), with the report, slides and viva still to come. Section 9 keeps the cut orders as a record of the original trade-offs.
 
 ## 2. Gap analysis: promised vs built
 
-Of 13 promised items, 2 hold as written, 3 need rewording only, and 8 need new work. The biggest gaps are traits, collisions and the bottleneck map.
+Of 13 promised items, the original audit found 2 holding as written, 3 needing rewording only, and 8 needing new work. All 13 are now closed: the Status column records the current state, and the Action/Phase columns record how each was closed.
 
 | # | Promise on the slides | Reality (from the audit) | Status | Action | Phase |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Grid in, expected time and heatmap out | Works end to end for the fixed chain | Holds | Keep | n/a |
-| 2 | Absorbing chain with N = (I-Q)^-1; row sums are expected time | Implemented and tested | Holds | Keep | n/a |
-| 3 | Monte Carlo validation | Exists, but only for a fixed chain, not the coupled simulation | Reword | Say "fixed-chain validation"; run E1 | 3 |
-| 4 | Panic as a diffusion PDE with walls | Works; no decay, so panic only grows while agents are present | Build | Add decay term; label units qualitative | 1 |
-| 5 | Row sums of N show bottlenecks | Row sum is expected time from a start cell, so it mostly marks cells far from exits; no capacity, so doors cannot jam | Build | Add capacity; blocked-move map; visit map s0^T N; rename row-sum map "time to exit" | 1 |
-| 6 | Gaussian traits (speed, reaction time) drive behaviour | Standalone sampler; the simulation never calls it | Build | Integrate as move budget and start delay | 1 |
-| 7 | Panic makes agents collide or cluster | Panic only blends each row toward a random walk; no collisions or capacity | Build | Capacity rule; reword slide | 1 |
-| 8 | Time-varying Q\_t with (I-Q\_t)N\_t = I each step | Implemented, but N\_t assumes Q\_t never changes again, so it is a diagnostic, not a forecast | Reword | Call it "frozen-chain diagnostic"; use ensembles for forecasts | 1, 4 |
-| 9 | Expected evacuation time from the coupled model | A single stochastic run, no ensemble, no censoring-aware statistic | Build | Ensemble runner with T50, T90, T100 and censoring flag | 1 |
-| 10 | LU, SVD and CG | LU and SVD exist; CG does not; the LU path still returns a dense N | Build | Sparse single-solve, CG for the uniform chain, BiCGSTAB or GMRES for the others | 2 |
-| 11 | 100x100 grids are computationally feasible | Unproven; a dense N at 100x100 is about 10^8 doubles (roughly 0.8 GB) | Build | Scaling benchmark E2 with a recorded environment | 2 |
-| 12 | Exit-placement optimisation | Heuristic BFGS over a rounded interpolation; objective is effectively the longest shortest path | Build | Enumerate all legal positions; use ensemble time as objective | 2 |
-| 13 | Predicts performance before a building exists; shows "fatal" bottlenecks | No calibration, no validation against data, no casualty model | Reword | Replace with "compares designs under stated assumptions" | 4 |
+| 1 | Grid in, expected time and heatmap out | Works end to end for the fixed chain | Done | Keep | n/a |
+| 2 | Absorbing chain with N = (I-Q)^-1; row sums are expected time | Implemented and tested | Done | Keep | n/a |
+| 3 | Monte Carlo validation | Exists, but only for a fixed chain, not the coupled simulation | Done | Say "fixed-chain validation"; run E1 | 3 |
+| 4 | Panic as a diffusion PDE with walls | Works; no decay, so panic only grows while agents are present | Done | Add decay term; label units qualitative | 1 |
+| 5 | Row sums of N show bottlenecks | Row sum is expected time from a start cell, so it mostly marks cells far from exits; no capacity, so doors cannot jam | Done | Add capacity; blocked-move map; visit map s0^T N; rename row-sum map "time to exit" | 1 |
+| 6 | Gaussian traits (speed, reaction time) drive behaviour | Standalone sampler; the simulation never calls it | Done | Integrate as move budget and start delay | 1 |
+| 7 | Panic makes agents collide or cluster | Panic only blends each row toward a random walk; no collisions or capacity | Done | Capacity rule; reword slide | 1 |
+| 8 | Time-varying Q\_t with (I-Q\_t)N\_t = I each step | Implemented, but N\_t assumes Q\_t never changes again, so it is a diagnostic, not a forecast | Done | Call it "frozen-chain diagnostic"; use ensembles for forecasts | 1, 4 |
+| 9 | Expected evacuation time from the coupled model | A single stochastic run, no ensemble, no censoring-aware statistic | Done | Ensemble runner with T50, T90, T100 and censoring flag | 1 |
+| 10 | LU, SVD and CG | LU and SVD exist; CG does not; the LU path still returns a dense N | Done | Sparse single-solve, CG for the uniform chain, BiCGSTAB or GMRES for the others | 2 |
+| 11 | 100x100 grids are computationally feasible | Unproven; a dense N at 100x100 is about 10^8 doubles (roughly 0.8 GB) | Done | Scaling benchmark E2 with a recorded environment | 2 |
+| 12 | Exit-placement optimisation | Heuristic BFGS over a rounded interpolation; objective is effectively the longest shortest path | Done | Enumerate all legal positions; use ensemble time as objective | 2 |
+| 13 | Predicts performance before a building exists; shows "fatal" bottlenecks | No calibration, no validation against data, no casualty model | Done | Replace with "compares designs under stated assumptions" | 4 |
 
 The web editor exists but was not promised on the slides, so it is optional work in Phase 4.
 
@@ -111,7 +110,7 @@ The web editor exists but was not promised on the slides, so it is optional work
 
 These apply to every task below, so they are stated once.
 
-1. **Every new behaviour has an off switch that reproduces today's results.** Capacity infinite, traits off and panic decay zero must give the same output as the tagged baseline for the same seed. This protects the 36 passing tests and gives a clean ablation for every experiment.
+1. **Every new behaviour has an off switch that reproduces today's results.** Capacity infinite, traits off and panic decay zero must give the same output as the tagged baseline for the same seed. This protects the tagged baseline and the current suite, and gives a clean ablation for every experiment.
 2. **Seeds are explicit.** Every random draw comes from one `numpy.random.Generator` passed in or created from a recorded seed. Comparisons between two configurations use the same seeds (common random numbers), so differences are not noise.
 3. **Tests before claims.** A feature counts as done only when a test pins its invariant (listed in each task) and the headless suite is green.
 4. **One environment for evidence.** All figures and CSVs come from one script run, with Python, NumPy, SciPy, CPU, RAM and git commit written beside them.
@@ -120,20 +119,20 @@ These apply to every task below, so they are stated once.
 
 ## 4. Phase plan
 
-### Phase 0: Stabilise the baseline (1 person-day)
+### Phase 0: Stabilise the baseline (1 person-day) — complete
 
-The repository is dirty (modified tracked files and untracked files), and the default test command fails on this host. Fix both before building on it.
+At the audit the repository was dirty and the default test command failed on this host. Both were fixed before building: the tree is committed and tagged, and `pytest -q` runs headless through `conftest.py`.
 
 | ID | Task | Detail | Done when | Days |
 | --- | --- | --- | --- | --- |
 | 0.1 | Freeze baseline | Review the diff, commit it on a branch, tag `baseline-audit-2026-10-26` | Clean `git status`; tag exists | 0.25 |
-| 0.2 | Reproducible tests | `conftest.py` sets the Agg backend and a writable temp directory; add a `requirements-web.txt` with Flask and Flask-CORS; note the Tk failure as a known host issue | `pytest -q` gives 36 passed with no flags on a fresh clone | 0.25 |
+| 0.2 | Reproducible tests | `conftest.py` sets the Agg backend and a writable temp directory; add a `requirements-web.txt` with Flask and Flask-CORS; note the Tk failure as a known host issue | `pytest -q` passes with no flags on a fresh clone (283 today) | 0.25 |
 | 0.3 | Scope and claims ledger | One page: what we claim, what we do not (Section 8), agreed by all four members | Signed off in the team chat | 0.25 |
 | 0.4 | Experiment scaffolding | `experiments/` folder, `run_all.py`, `env_info.py` writing the environment record, fixed seed list | `run_all.py --dry-run` writes the environment file | 0.25 |
 
-### Phase 1: Make the engines real (5 person-days)
+### Phase 1: Make the engines real (5 person-days) — complete
 
-This is where the two unreal engines become real. Design details are in Section 5.
+The two unreal engines are now real, and every task below has its invariant test. Design details are in Section 5.
 
 | ID | Task | Files | Test that pins it | Days |
 | --- | --- | --- | --- | --- |
@@ -145,9 +144,9 @@ This is where the two unreal engines become real. Design details are in Section 
 | 1.6 | Frozen-chain wording. Rename `N_t` outputs and docstrings to "frozen-chain diagnostic" | `simulation.py`, `app.py`, README | Grep finds no remaining claim that `N_t` forecasts the run | 0.25 |
 | 1.7 | Invariant test pack. Row-stochastic `Q_t,R_t` assertion in tests, capacity conservation, seed reproducibility | `tests/` | New tests green in the headless suite | 0.25 |
 
-### Phase 2: Numerical engine and optimiser (3.5 person-days)
+### Phase 2: Numerical engine and optimiser (3.5 person-days) — complete
 
-Phase 2 does not depend on Phase 1 and can start on day 2 in parallel.
+Phase 2 did not depend on Phase 1 and ran in parallel; both are now finished and tested.
 
 | ID | Task | Detail | Done when | Days |
 | --- | --- | --- | --- | --- |
@@ -158,7 +157,9 @@ Phase 2 does not depend on Phase 1 and can start on day 2 in parallel.
 | 2.5 | Relabel the old optimiser | Keep BFGS only as a comparison baseline named "heuristic search"; E5 reports where it misses the true optimum | Docstring and README updated | 0.25 |
 | 2.6 | SVD role | Keep SVD for small or ill-conditioned cases; report the condition number (exact on small grids, estimated via `svds` on moderate ones) and show a rank-truncated approximation error on one case | One figure and one sentence on when SVD helps | 0.25 |
 
-### Phase 3: Experiments and evidence (3 person-days)
+### Phase 3: Experiments and evidence (3 person-days) — complete
+
+The full E1–E7 run finished 7/7 `ok` and is recorded in `docs/RESULTS.md`, with raw output in `experiments/out/` and the environment beside it.
 
 | ID | Task | Days |
 | --- | --- | --- |
@@ -170,15 +171,24 @@ Phase 2 does not depend on Phase 1 and can start on day 2 in parallel.
 
 The experiment definitions are in Section 6.
 
-### Phase 4: Package and defend (5 person-days)
+### Phase 4: Package and defend (5 person-days) — in progress
 
-| ID | Task | Days |
-| --- | --- | --- |
-| 4.1 | Slides: rewrite using Section 8 wording, replace stock figures with E1 to E7 output, add a limitations slide | 1.0 |
-| 4.2 | Report: method, validation, results, limitations, reproducibility appendix | 2.0 |
-| 4.3 | Web editor update (optional): expose capacity, traits, decay and ensemble statistics; return safe errors outside development; restrict CORS origins; declare Flask extras | 1.0 |
-| 4.4 | Viva preparation: extend the audit's Q&A (Section 11), then one mock viva where each member answers about another's part | 0.75 |
-| 4.5 | Final freeze: tag the release, clone fresh, install, run the tests and `run_all.py`, confirm outputs match the report | 0.25 |
+| ID | Task | Days | Status |
+| --- | --- | --- | --- |
+| 4.1 | Slides: rewrite using Section 8 wording, replace stock figures with E1 to E7 output, add a limitations slide | 1.0 | Deferred — presentation work |
+| 4.2 | Report: method, validation, results, limitations, reproducibility appendix | 2.0 | Deferred — presentation work |
+| 4.3 | Web editor update: expose capacity, traits, decay and ensemble statistics; return safe errors outside development; restrict CORS origins; declare Flask extras | 1.0 | Done — `demo/web_editor/`, `tests/test_web_editor.py`, `demo/README.md` |
+| 4.4 | Viva preparation: extend the audit's Q&A (Section 11), then one mock viva where each member answers about another's part | 0.75 | Deferred — preparation work |
+| 4.5 | Final freeze: tag the release, clone fresh, install, run the tests and `run_all.py`, confirm outputs match the report | 0.25 | Next — after 4.1 and 4.2 |
+
+The editor work went beyond the original scope: it also gained a one-click
+launcher (`demo/run_demo.bat`), a standalone showcase script
+(`demo/showcase.py`), an exact-vs-BFGS optimizer tab, a residual readout, and
+the `/api/ensemble` endpoint behind the compare button. The planned
+`DEMO_TOKEN` gate was replaced by a localhost-only check plus origin-restricted
+CORS, so the one-click demo needs no environment variables; the launcher's
+evidence-regeneration prompt defaults to *no* for the same reason. Both are
+deliberate deviations from the original wording, not omissions.
 
 ## 5. Design decisions for the new engines
 
@@ -297,13 +307,14 @@ If time is short, cut from the bottom of each list upward; never cut the rewordi
 
 ### Final checklist
 
-- [ ] `pytest -q` passes on a fresh clone with no flags, including the new invariant tests.
-- [ ] `run_all.py` regenerates every figure and CSV, with the environment file beside them.
-- [ ] Every claim on the slides appears in the Section 8 ledger and has a test or experiment behind it.
-- [ ] README, `currentstatus.md` and the slides agree; the "all phases 100% complete" line is gone.
-- [ ] Frozen-chain wording is consistent in code, API responses, plots and slides.
-- [ ] The limitations slide and report section are present.
-- [ ] A tag marks the delivered commit.
+- [x] `pytest -q` passes on a fresh clone with no flags, including the new invariant tests.
+- [x] `run_all.py` regenerates every figure and CSV, with the environment file beside them.
+- [x] Every written claim appears in the Section 8 ledger and has a test or experiment behind it.
+- [x] README, `currentstatus.md` and the claims ledger agree; no stale "all phases 100% complete" or old test counts remain.
+- [x] Frozen-chain wording is consistent in code, API responses, plots and the README.
+- [x] The limitations section is present in the README and the claims ledger.
+- [ ] The limitations slide and report section are present (Phase 4.1–4.2).
+- [ ] A tag marks the delivered commit (Phase 4.5).
 
 ### Extra viva questions to rehearse (beyond the audit's list)
 

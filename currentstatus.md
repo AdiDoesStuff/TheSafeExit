@@ -1,6 +1,6 @@
 # Current Status Report
 
-Last audited: 2026-10-26, on branch `phase-0-1`, after Phases 0–3.
+Last audited: 2026-10-27, on branch `main`, after Phases 0–3 and the demo packaging.
 
 This document records what is implemented, what the test suite covers, and what
 the project does **not** claim. It replaces the earlier audit that predated the
@@ -12,11 +12,13 @@ panic-decay, capacity, trait, numerical-engine and experiment work.
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-- **Result:** 269 passed, 0 failed.
+- **Result:** 283 passed, 0 failed.
 - **Warning:** one pre-existing Matplotlib `PendingDeprecationWarning` from
   `cmap.set_bad` in `src/heatmap.py`; it does not affect results.
 - The suite runs headless through `conftest.py` (Agg backend), so no display is
   needed.
+- Fourteen tests cover the web-editor endpoints. They `importorskip` Flask, so
+  they are skipped only when `requirements-web.txt` is not installed.
 
 New coverage added in Phases 0–3:
 
@@ -32,6 +34,7 @@ New coverage added in Phases 0–3:
 | `tests/test_solvers_phase2.py` | sparse/LU/dense/iterative agreement, residuals below 1e-8, MC guards, SVD diagnostics |
 | `tests/test_exact_exit_search.py` | hand-checked enumeration optimum, ensemble re-score, heuristic alias |
 | `tests/test_experiments_smoke.py` | E1/E2 run end to end, harness dry run, hallway choke cell |
+| `tests/test_web_editor.py` | editor page and health, analyze residual, Monte Carlo vs exact, optimizer exact-vs-BFGS, simulate scenario pass-through, ensemble quantiles, localhost-only guard, JSON errors |
 
 ## Implemented components
 
@@ -54,7 +57,8 @@ New coverage added in Phases 0–3:
 | Ensemble | Summed blocked-move counts and truncated-trait counts | Implemented | `src/ensemble.py` |
 | Maps | Time-to-exit, expected-visits and blocked-moves maps | Implemented | `src/heatmap.py` |
 | Experiments | E1–E7 harness, quick/full configs, environment record | Implemented | `experiments/` |
-| Web editor | Optional Flask editor with static, dynamic, MC and optimiser endpoints | Present, not covered by the headless suite | `demo/web_editor/` |
+| Web editor | Optional Flask editor: analyze, Monte Carlo, optimizer, simulate, ensemble; localhost-only heavy endpoints | Implemented and covered | `demo/web_editor/`, `tests/test_web_editor.py` |
+| Demo | One-click launcher, showcase script, editor walkthrough | Implemented | `demo/run_demo.bat`, `demo/showcase.py`, `demo/README.md` |
 
 ## Numerical engine
 
@@ -112,8 +116,22 @@ evidence for a trend. See `docs/EXPERIMENTS.md` for how to read each output.
 - The exhaustive exit search is optimal only over enumerated boundary positions
   for the rational BFS objective, not for every possible building design.
 - `N_t` during a panic-coupled run is a frozen-chain diagnostic, not a forecast.
-- The web editor is an optional demonstration tool and is not validated by the
-  automated suite.
+- The web editor is a demonstration surface: its endpoints are tested, but that
+  tests the plumbing, not the model's real-world accuracy.
+
+## Demo
+
+| Command | Result |
+|---|---|
+| `demo\run_demo.bat` | Starts the editor on `127.0.0.1:5050` and opens the browser |
+| `.venv\Scripts\python.exe demo\showcase.py` | Four headline plots plus printed numbers in under a minute, under `experiments/out/showcase/` |
+| `.venv\Scripts\python.exe demo\web_editor\app.py` | Manual editor start |
+
+The editor exposes analyze (with residual and solve time), Monte Carlo, exact
+vs BFGS exit placement, the coupled panic simulation with T50/T90/T100 and
+blocked moves, and a common-seed panic on/off ensemble comparison. Scenario
+controls cover panic decay, capacity and traits, each with an off switch.
+`demo/README.md` is the walkthrough.
 
 ## Remaining work (Phase 4)
 
@@ -123,5 +141,6 @@ evidence for a trend. See `docs/EXPERIMENTS.md` for how to read each output.
 - Prepare viva questions and a mock viva.
 - Final freeze: tag `final`, fresh clone, install, run the tests and the full
   experiment suite, and confirm the report numbers match the outputs.
-- The web editor can expose capacity, traits, decay and ensembles if time
-  permits; it is optional.
+
+Phases 0–3 and the demo packaging are complete; only presentation and the final
+freeze remain.
